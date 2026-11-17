@@ -1,0 +1,450 @@
+{
+  "version": 1,
+  "author": "Projeto didatico Arduino",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-arduino-uno",
+      "id": "uno",
+      "top": 125,
+      "left": 40,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd",
+      "top": 20,
+      "left": 610,
+      "attrs": {
+        "pins": "full",
+        "background": "blue",
+        "color": "white"
+      }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "servo",
+      "top": 245,
+      "left": 930,
+      "attrs": {
+        "horn": "single"
+      }
+    },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "pot",
+      "top": 245,
+      "left": 665,
+      "attrs": {
+        "value": "400"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "res",
+      "top": 140,
+      "left": 960,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_11",
+      "top": 405,
+      "left": 545,
+      "attrs": {
+        "label": "1",
+        "key": "1",
+        "color": "#6DAAF6",
+        "bounce": "0"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_12",
+      "top": 405,
+      "left": 650,
+      "attrs": {
+        "label": "2",
+        "key": "2",
+        "color": "#6DAAF6",
+        "bounce": "0"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_13",
+      "top": 405,
+      "left": 755,
+      "attrs": {
+        "label": "3",
+        "key": "3",
+        "color": "#6DAAF6",
+        "bounce": "0"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_21",
+      "top": 510,
+      "left": 545,
+      "attrs": {
+        "label": "4",
+        "key": "4",
+        "color": "#6DAAF6",
+        "bounce": "0"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_22",
+      "top": 510,
+      "left": 650,
+      "attrs": {
+        "label": "5",
+        "key": "5",
+        "color": "#6DAAF6",
+        "bounce": "0"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_23",
+      "top": 510,
+      "left": 755,
+      "attrs": {
+        "label": "6",
+        "key": "6",
+        "color": "#6DAAF6",
+        "bounce": "0"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_31",
+      "top": 615,
+      "left": 545,
+      "attrs": {
+        "label": "7",
+        "key": "7",
+        "color": "#6DAAF6",
+        "bounce": "0"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_32",
+      "top": 615,
+      "left": 650,
+      "attrs": {
+        "label": "8",
+        "key": "8",
+        "color": "#6DAAF6",
+        "bounce": "0"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_33",
+      "top": 615,
+      "left": 755,
+      "attrs": {
+        "label": "9",
+        "key": "9",
+        "color": "#6DAAF6",
+        "bounce": "0"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_41",
+      "top": 720,
+      "left": 545,
+      "attrs": {
+        "label": "*",
+        "key": "X",
+        "color": "#6DAAF6",
+        "bounce": "0"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_42",
+      "top": 720,
+      "left": 650,
+      "attrs": {
+        "label": "0",
+        "key": "0",
+        "color": "#6DAAF6",
+        "bounce": "0"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_43",
+      "top": 720,
+      "left": 755,
+      "attrs": {
+        "label": "#",
+        "key": "Z",
+        "color": "#6DAAF6",
+        "bounce": "0"
+      }
+    }
+  ],
+  "connections": [
+    [
+      "uno:2",
+      "btn_11:1.l",
+      "#d97706",
+      []
+    ],
+    [
+      "btn_11:1.r",
+      "btn_12:1.l",
+      "#d97706",
+      []
+    ],
+    [
+      "btn_12:1.r",
+      "btn_13:1.l",
+      "#d97706",
+      []
+    ],
+    [
+      "uno:3",
+      "btn_21:1.l",
+      "#d97706",
+      []
+    ],
+    [
+      "btn_21:1.r",
+      "btn_22:1.l",
+      "#d97706",
+      []
+    ],
+    [
+      "btn_22:1.r",
+      "btn_23:1.l",
+      "#d97706",
+      []
+    ],
+    [
+      "uno:4",
+      "btn_31:1.l",
+      "#d97706",
+      []
+    ],
+    [
+      "btn_31:1.r",
+      "btn_32:1.l",
+      "#d97706",
+      []
+    ],
+    [
+      "btn_32:1.r",
+      "btn_33:1.l",
+      "#d97706",
+      []
+    ],
+    [
+      "uno:5",
+      "btn_41:1.l",
+      "#d97706",
+      []
+    ],
+    [
+      "btn_41:1.r",
+      "btn_42:1.l",
+      "#d97706",
+      []
+    ],
+    [
+      "btn_42:1.r",
+      "btn_43:1.l",
+      "#d97706",
+      []
+    ],
+    [
+      "uno:6",
+      "btn_11:2.l",
+      "#2563eb",
+      []
+    ],
+    [
+      "btn_11:2.r",
+      "btn_21:2.l",
+      "#2563eb",
+      []
+    ],
+    [
+      "btn_21:2.r",
+      "btn_31:2.l",
+      "#2563eb",
+      []
+    ],
+    [
+      "btn_31:2.r",
+      "btn_41:2.l",
+      "#2563eb",
+      []
+    ],
+    [
+      "uno:7",
+      "btn_12:2.l",
+      "#2563eb",
+      []
+    ],
+    [
+      "btn_12:2.r",
+      "btn_22:2.l",
+      "#2563eb",
+      []
+    ],
+    [
+      "btn_22:2.r",
+      "btn_32:2.l",
+      "#2563eb",
+      []
+    ],
+    [
+      "btn_32:2.r",
+      "btn_42:2.l",
+      "#2563eb",
+      []
+    ],
+    [
+      "uno:8",
+      "btn_13:2.l",
+      "#2563eb",
+      []
+    ],
+    [
+      "btn_13:2.r",
+      "btn_23:2.l",
+      "#2563eb",
+      []
+    ],
+    [
+      "btn_23:2.r",
+      "btn_33:2.l",
+      "#2563eb",
+      []
+    ],
+    [
+      "btn_33:2.r",
+      "btn_43:2.l",
+      "#2563eb",
+      []
+    ],
+    [
+      "uno:10",
+      "lcd:RS",
+      "#9333ea",
+      []
+    ],
+    [
+      "uno:11",
+      "lcd:E",
+      "#9333ea",
+      []
+    ],
+    [
+      "uno:12",
+      "lcd:D4",
+      "#9333ea",
+      []
+    ],
+    [
+      "uno:13",
+      "lcd:D5",
+      "#9333ea",
+      []
+    ],
+    [
+      "uno:A0",
+      "lcd:D6",
+      "#9333ea",
+      []
+    ],
+    [
+      "uno:A1",
+      "lcd:D7",
+      "#9333ea",
+      []
+    ],
+    [
+      "lcd:VSS",
+      "uno:GND.1",
+      "black",
+      []
+    ],
+    [
+      "lcd:RW",
+      "uno:GND.1",
+      "black",
+      []
+    ],
+    [
+      "lcd:K",
+      "uno:GND.1",
+      "black",
+      []
+    ],
+    [
+      "lcd:VDD",
+      "uno:5V",
+      "red",
+      []
+    ],
+    [
+      "lcd:V0",
+      "pot:SIG",
+      "#0891b2",
+      []
+    ],
+    [
+      "pot:GND",
+      "uno:GND.2",
+      "black",
+      []
+    ],
+    [
+      "pot:VCC",
+      "uno:5V",
+      "red",
+      []
+    ],
+    [
+      "uno:5V",
+      "res:1",
+      "red",
+      []
+    ],
+    [
+      "res:2",
+      "lcd:A",
+      "red",
+      []
+    ],
+    [
+      "uno:9",
+      "servo:PWM",
+      "green",
+      []
+    ],
+    [
+      "servo:V+",
+      "uno:5V",
+      "red",
+      []
+    ],
+    [
+      "servo:GND",
+      "uno:GND.3",
+      "black",
+      []
+    ]
+  ]
+}
