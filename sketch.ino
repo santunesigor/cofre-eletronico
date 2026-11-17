@@ -1,7 +1,7 @@
 /*
  * COFRE ELETRONICO - Arduino Uno / Wokwi
  * Componentes: LCD 16x2 paralelo, microservo, buzzer e 12 botoes (matriz 4x3)
- * Senha inicial: 1234 | # confirma ou fecha | * apaga
+ * Senha inicial: 1234 | Confirmar valida ou fecha | Limpar apaga
  * Nao precisa da biblioteca Keypad: varredura da matriz feita no codigo.
  * Simulacao no Wokwi com as bibliotecas Servo e LiquidCrystal.
  */
@@ -16,13 +16,16 @@ Servo trava;
 
 const byte PIN_SERVO = 9;
 const byte PIN_BUZZER = A2;
+// Codigos internos dos botoes rotulados no circuito.
+const char TECLA_LIMPAR = '*';
+const char TECLA_CONFIRMAR = '#';
 const byte PIN_LINHAS[4] = {2, 3, 4, 5};
 const byte PIN_COLUNAS[3] = {6, 7, 8};
 const char TECLAS[4][3] = {
   {'1', '2', '3'},
   {'4', '5', '6'},
   {'7', '8', '9'},
-  {'*', '0', '#'}
+  {TECLA_LIMPAR, '0', TECLA_CONFIRMAR}
 };
 
 const char SENHA[] = "1234";  // Altere aqui para personalizar
@@ -94,9 +97,9 @@ void abrirPorta() {
   trava.write(ANGULO_ABERTO);
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Cofre aberto");
+  lcd.print("Para fechar:");
   lcd.setCursor(0, 1);
-  lcd.print("# para fechar");
+  lcd.print("Aperte Confirmar");
 }
 
 void fecharPorta() {
@@ -133,13 +136,13 @@ void confirmarSenha() {
 
 void tratarTecla(char tecla) {
   if (portaAberta) {
-    if (tecla == '#') fecharPorta();
+    if (tecla == TECLA_CONFIRMAR) fecharPorta();
     return;
   }
 
-  if (tecla == '*') {
+  if (tecla == TECLA_LIMPAR) {
     limparEntrada();
-  } else if (tecla == '#') {
+  } else if (tecla == TECLA_CONFIRMAR) {
     confirmarSenha();
   } else if (tecla >= '0' && tecla <= '9' && quantidade < 4) {
     digitado[quantidade++] = tecla;

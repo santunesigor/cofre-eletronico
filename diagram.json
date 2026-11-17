@@ -169,7 +169,7 @@
       "top": 720,
       "left": 545,
       "attrs": {
-        "label": "*",
+        "label": "Limpar",
         "key": "X",
         "color": "#6DAAF6",
         "bounce": "0"
@@ -193,7 +193,7 @@
       "top": 720,
       "left": 755,
       "attrs": {
-        "label": "#",
+        "label": "Confirmar",
         "key": "Z",
         "color": "#6DAAF6",
         "bounce": "0"
