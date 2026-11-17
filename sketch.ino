@@ -1,9 +1,9 @@
 /*
- * FECHADURA ELETRONICA - Arduino Uno / Tinkercad / Wokwi
- * Componentes: LCD 16x2 paralelo, microservo, 12 botoes tacteis (teclado 4x3)
- * Senha inicial: 1234 | # confirma | * apaga | 5 segundos para fechar
+ * COFRE ELETRONICO - Arduino Uno / Wokwi
+ * Componentes: LCD 16x2 paralelo, microservo, buzzer e 12 botoes (matriz 4x3)
+ * Senha inicial: 1234 | # confirma ou fecha | * apaga
  * Nao precisa da biblioteca Keypad: varredura da matriz feita no codigo.
- * Bibliotecas Servo e LiquidCrystal ja estao disponiveis no Tinkercad.
+ * Simulacao no Wokwi com as bibliotecas Servo e LiquidCrystal.
  */
 
 #include <LiquidCrystal.h>
@@ -15,6 +15,7 @@ LiquidCrystal lcd(10, 11, 12, 13, A0, A1);
 Servo trava;
 
 const byte PIN_SERVO = 9;
+const byte PIN_BUZZER = A2;
 const byte PIN_LINHAS[4] = {2, 3, 4, 5};
 const byte PIN_COLUNAS[3] = {6, 7, 8};
 const char TECLAS[4][3] = {
@@ -25,7 +26,6 @@ const char TECLAS[4][3] = {
 };
 
 const char SENHA[] = "1234";  // Altere aqui para personalizar
-const unsigned long TEMPO_ABERTO_MS = 5000;
 const unsigned long DEBOUNCE_MS = 40;
 const byte ANGULO_FECHADO = 0;
 const byte ANGULO_ABERTO = 90;
@@ -33,8 +33,6 @@ const byte ANGULO_ABERTO = 90;
 char digitado[5] = "";
 byte quantidade = 0;
 bool portaAberta = false;
-unsigned long momentoAbertura = 0;
-byte ultimoSegundoExibido = 255;
 
 char leituraAnterior = '\0';
 char teclaEstavel = '\0';
@@ -93,14 +91,21 @@ char lerPressionamento() {
 
 void abrirPorta() {
   portaAberta = true;
-  momentoAbertura = millis();
-  ultimoSegundoExibido = 255;
   trava.write(ANGULO_ABERTO);
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Acesso permitido");
+  lcd.print("Cofre aberto");
   lcd.setCursor(0, 1);
-  lcd.print("Porta aberta!");
+  lcd.print("# para fechar");
+}
+
+void fecharPorta() {
+  trava.write(ANGULO_FECHADO);
+  portaAberta = false;
+  lcd.clear();
+  lcd.print("Cofre fechado");
+  delay(800);
+  limparEntrada();
 }
 
 void confirmarSenha() {
@@ -120,13 +125,17 @@ void confirmarSenha() {
     lcd.print("Senha incorreta");
     lcd.setCursor(0, 1);
     lcd.print("Tente de novo");
+    tone(PIN_BUZZER, 1000, 600);
     delay(1200);
     limparEntrada();
   }
 }
 
 void tratarTecla(char tecla) {
-  if (portaAberta) return;
+  if (portaAberta) {
+    if (tecla == '#') fecharPorta();
+    return;
+  }
 
   if (tecla == '*') {
     limparEntrada();
@@ -142,6 +151,8 @@ void tratarTecla(char tecla) {
 void setup() {
   for (byte i = 0; i < 4; i++) pinMode(PIN_LINHAS[i], INPUT);
   for (byte i = 0; i < 3; i++) pinMode(PIN_COLUNAS[i], INPUT_PULLUP);
+  pinMode(PIN_BUZZER, OUTPUT);
+  noTone(PIN_BUZZER);
 
   trava.attach(PIN_SERVO);
   trava.write(ANGULO_FECHADO);
@@ -152,25 +163,4 @@ void setup() {
 void loop() {
   char tecla = lerPressionamento();
   if (tecla != '\0') tratarTecla(tecla);
-
-  if (portaAberta) {
-    unsigned long decorrido = millis() - momentoAbertura;
-    if (decorrido >= TEMPO_ABERTO_MS) {
-      trava.write(ANGULO_FECHADO);
-      portaAberta = false;
-      lcd.clear();
-      lcd.print("Porta fechada");
-      delay(800);
-      limparEntrada();
-    } else {
-      byte segundos = (TEMPO_ABERTO_MS - decorrido + 999) / 1000;
-      if (segundos != ultimoSegundoExibido) {
-        ultimoSegundoExibido = segundos;
-        lcd.setCursor(0, 1);
-        lcd.print("Fecha em ");
-        lcd.print(segundos);
-        lcd.print(" s     ");
-      }
-    }
-  }
 }

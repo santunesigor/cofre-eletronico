@@ -1,8 +1,15 @@
 {
   "version": 1,
-  "author": "Projeto didatico Arduino",
+  "author": "Igor Antunes",
   "editor": "wokwi",
   "parts": [
+    {
+      "type": "wokwi-buzzer",
+      "id": "buzzer",
+      "top": 300,
+      "left": 380,
+      "attrs": { "volume": "0.3" }
+    },
     {
       "type": "wokwi-arduino-uno",
       "id": "uno",
@@ -194,6 +201,8 @@
     }
   ],
   "connections": [
+    ["buzzer:1", "uno:GND.1", "black", []],
+    ["buzzer:2", "uno:A2", "orange", []],
     [
       "uno:2",
       "btn_11:1.l",
