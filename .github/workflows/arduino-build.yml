@@ -44,6 +44,9 @@ jobs:
           print("Circuito LCD I2C validado.")
           PY
 
+      - name: Testar teclado e troca de senha
+        run: python3 tests/test_senha.py
+
       - name: Compilar sketch para Arduino Uno R3
         run: |
           mkdir -p "$RUNNER_TEMP/cofre_eletronico"
