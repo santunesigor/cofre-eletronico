@@ -8,7 +8,9 @@
       "id": "buzzer",
       "top": 300,
       "left": 380,
-      "attrs": { "volume": "0.3" }
+      "attrs": {
+        "volume": "0.3"
+      }
     },
     {
       "type": "wokwi-arduino-uno",
@@ -23,9 +25,10 @@
       "top": 20,
       "left": 610,
       "attrs": {
-        "pins": "full",
+        "pins": "i2c",
         "background": "blue",
-        "color": "white"
+        "color": "white",
+        "i2cAddress": "0x27"
       }
     },
     {
@@ -35,24 +38,6 @@
       "left": 930,
       "attrs": {
         "horn": "single"
-      }
-    },
-    {
-      "type": "wokwi-potentiometer",
-      "id": "pot",
-      "top": 245,
-      "left": 665,
-      "attrs": {
-        "value": "400"
-      }
-    },
-    {
-      "type": "wokwi-resistor",
-      "id": "res",
-      "top": 140,
-      "left": 960,
-      "attrs": {
-        "value": "220"
       }
     },
     {
@@ -201,8 +186,18 @@
     }
   ],
   "connections": [
-    ["buzzer:1", "uno:GND.1", "black", []],
-    ["buzzer:2", "uno:A2", "orange", []],
+    [
+      "buzzer:1",
+      "uno:GND.1",
+      "black",
+      []
+    ],
+    [
+      "buzzer:2",
+      "uno:A2",
+      "orange",
+      []
+    ],
     [
       "uno:2",
       "btn_11:1.l",
@@ -348,93 +343,27 @@
       []
     ],
     [
-      "uno:10",
-      "lcd:RS",
-      "#9333ea",
-      []
-    ],
-    [
-      "uno:11",
-      "lcd:E",
-      "#9333ea",
-      []
-    ],
-    [
-      "uno:12",
-      "lcd:D4",
-      "#9333ea",
-      []
-    ],
-    [
-      "uno:13",
-      "lcd:D5",
-      "#9333ea",
-      []
-    ],
-    [
-      "uno:A0",
-      "lcd:D6",
-      "#9333ea",
-      []
-    ],
-    [
-      "uno:A1",
-      "lcd:D7",
-      "#9333ea",
-      []
-    ],
-    [
-      "lcd:VSS",
+      "lcd:GND",
       "uno:GND.1",
       "black",
       []
     ],
     [
-      "lcd:RW",
-      "uno:GND.1",
-      "black",
-      []
-    ],
-    [
-      "lcd:K",
-      "uno:GND.1",
-      "black",
-      []
-    ],
-    [
-      "lcd:VDD",
+      "lcd:VCC",
       "uno:5V",
       "red",
       []
     ],
     [
-      "lcd:V0",
-      "pot:SIG",
+      "lcd:SDA",
+      "uno:A4",
       "#0891b2",
       []
     ],
     [
-      "pot:GND",
-      "uno:GND.2",
-      "black",
-      []
-    ],
-    [
-      "pot:VCC",
-      "uno:5V",
-      "red",
-      []
-    ],
-    [
-      "uno:5V",
-      "res:1",
-      "red",
-      []
-    ],
-    [
-      "res:2",
-      "lcd:A",
-      "red",
+      "lcd:SCL",
+      "uno:A5",
+      "#9333ea",
       []
     ],
     [

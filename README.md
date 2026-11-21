@@ -20,12 +20,12 @@ Protótipo didático de um cofre eletrônico com Arduino Uno, senha numérica, d
 | Quantidade | Componente |
 | --- | --- |
 | 1 | Arduino Uno R3 |
-| 1 | LCD 16×2 paralelo, em modo de 4 bits |
+| 1 | LCD 16×2 com módulo I2C integrado (PCF8574) |
 | 1 | Microservomotor |
 | 1 | Buzzer piezoelétrico passivo |
 | 12 | Botões pulsadores normalmente abertos |
-| 1 | Potenciômetro de 10 kΩ para o contraste do LCD |
-| 1 | Resistor de 220 Ω para a iluminação do LCD |
+
+O LCD I2C dispensa o potenciômetro e o resistor externos do circuito paralelo: o módulo normalmente já possui ajuste de contraste (trimpot) e circuito de iluminação.
 
 ## Pinagem
 
@@ -34,18 +34,17 @@ Protótipo didático de um cofre eletrônico com Arduino Uno, senha numérica, d
 | D2–D5 | Linhas da matriz: `1 2 3`, `4 5 6`, `7 8 9`, `Limpar 0 Confirmar` |
 | D6–D8 | Colunas da matriz: `1 4 7 Limpar`, `2 5 8 0`, `3 6 9 Confirmar` |
 | D9 | Sinal do servo |
-| D10 | LCD RS |
-| D11 | LCD E |
-| D12 | LCD D4 |
-| D13 | LCD D5 |
-| A0 | LCD D6 |
-| A1 | LCD D7 |
 | A2 | Positivo do buzzer (pino 2 no Wokwi) |
-| GND | Negativo do buzzer (pino 1 no Wokwi) |
+| A4 (SDA) | LCD SDA |
+| A5 (SCL) | LCD SCL |
+| 5V | LCD VCC e alimentação do servo |
+| GND | LCD GND, negativo do buzzer e GND do servo |
 
-LCD: VSS, RW e K em GND; VDD em 5 V; A em 5 V através do resistor de 220 Ω. V0 no terminal central do potenciômetro, cujas extremidades estão em 5 V e GND. D0–D3 ficam desconectados. O servo recebe 5 V e GND, além do sinal em D9.
+O display usa apenas **GND, VCC, SDA e SCL**. Os pinos D10–D13 e A0–A1 ficam livres. Cada botão conecta uma linha a uma coluna quando pressionado. As colunas usam `INPUT_PULLUP`, dispensando resistores externos para o teclado. No Wokwi, os contatos usados são `1.l` e `2.l`.
 
-Cada botão conecta uma linha a uma coluna quando pressionado. As colunas usam `INPUT_PULLUP`, dispensando resistores externos para o teclado. No Wokwi, os contatos usados são `1.l` e `2.l`.
+**Endereço I2C:** a simulação utiliza `0x27`, definido em `ENDERECO_LCD` no `sketch.ino` e no atributo `i2cAddress` do `diagram.json`. Se o seu módulo físico tiver outro endereço (por exemplo `0x3F`), identifique-o com um scanner I2C e ajuste `ENDERECO_LCD` antes de gravar o Arduino. Se a tela acender mas os caracteres não aparecerem, confira o endereço e ajuste o trimpot de contraste na placa I2C.
+
+Para o circuito físico, use alimentação 5 V adequada ao servo e GND comum; dependendo da carga do mecanismo, pode ser necessária uma fonte separada para o servo (com terra compartilhado).
 
 ## Simulação no Wokwi
 
@@ -55,7 +54,7 @@ Crie um [projeto Arduino Uno no Wokwi](https://wokwi.com/projects/new/arduino-un
 | --- | --- |
 | `sketch.ino` | Programa do cofre |
 | `diagram.json` | Componentes e ligações |
-| `libraries.txt` | Bibliotecas Servo e LiquidCrystal |
+| `libraries.txt` | Bibliotecas Servo e LiquidCrystal I2C |
 
 Inicie a simulação e digite `1234`, seguido de **Confirmar**, para abrir. Solte o botão e pressione **Confirmar** novamente para fechar. É possível clicar nos botões ou usar os atalhos do teclado:
 
@@ -71,3 +70,4 @@ O servomotor representa o mecanismo de trava deste protótipo; a senha fica defi
 
 - [Buzzer no Wokwi](https://docs.wokwi.com/parts/wokwi-buzzer)
 - [Formato do circuito no Wokwi](https://docs.wokwi.com/diagram-format)
+- [LCD1602 I2C no Wokwi](https://docs.wokwi.com/parts/wokwi-lcd1602)

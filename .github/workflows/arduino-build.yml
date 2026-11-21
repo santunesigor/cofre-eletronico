@@ -1,0 +1,51 @@
+name: Compilar Arduino Uno
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Preparar Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Instalar placa e bibliotecas
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+          arduino-cli lib install "Servo"
+          arduino-cli lib install "LiquidCrystal I2C"
+
+      - name: Validar circuito I2C
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          circuit = json.loads(Path("diagram.json").read_text())
+          parts = {p["id"]: p for p in circuit["parts"]}
+          assert parts["lcd"]["attrs"]["pins"] == "i2c"
+          assert parts["lcd"]["attrs"]["i2cAddress"] == "0x27"
+          assert "pot" not in parts and "res" not in parts
+          lcd_wires = {tuple(edge[:2]) for edge in circuit["connections"] if edge[0].startswith("lcd:") or edge[1].startswith("lcd:")}
+          assert lcd_wires == {
+              ("lcd:GND", "uno:GND.1"),
+              ("lcd:VCC", "uno:5V"),
+              ("lcd:SDA", "uno:A4"),
+              ("lcd:SCL", "uno:A5")
+          }, lcd_wires
+          connected_parts = {end.split(":")[0] for edge in circuit["connections"] for end in edge[:2]}
+          assert all(part in connected_parts for part in parts), sorted(set(parts)-connected_parts)
+          print("Circuito LCD I2C validado.")
+          PY
+
+      - name: Compilar sketch para Arduino Uno R3
+        run: |
+          mkdir -p "$RUNNER_TEMP/cofre_eletronico"
+          cp sketch.ino "$RUNNER_TEMP/cofre_eletronico/cofre_eletronico.ino"
+          arduino-cli compile --fqbn arduino:avr:uno "$RUNNER_TEMP/cofre_eletronico"

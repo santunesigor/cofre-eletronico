@@ -1,17 +1,20 @@
 /*
  * COFRE ELETRONICO - Arduino Uno / Wokwi
- * Componentes: LCD 16x2 paralelo, microservo, buzzer e 12 botoes (matriz 4x3)
+ * Componentes: LCD 16x2 I2C, microservo, buzzer e 12 botoes (matriz 4x3)
  * Senha inicial: 1234 | Confirmar valida ou fecha | Limpar apaga
  * Nao precisa da biblioteca Keypad: varredura da matriz feita no codigo.
- * Simulacao no Wokwi com as bibliotecas Servo e LiquidCrystal.
+ * Simulacao no Wokwi com as bibliotecas Servo e LiquidCrystal I2C.
  */
 
-#include <LiquidCrystal.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 #include <Servo.h>
 #include <string.h>
 
-// LCD RS, E, D4, D5, D6, D7
-LiquidCrystal lcd(10, 11, 12, 13, A0, A1);
+// LCD 16x2 I2C: SDA=A4, SCL=A5 no Arduino Uno.
+// 0x27 e o endereco padrao no Wokwi; confirme no LCD fisico.
+const byte ENDERECO_LCD = 0x27;
+LiquidCrystal_I2C lcd(ENDERECO_LCD, 16, 2);
 Servo trava;
 
 const byte PIN_SERVO = 9;
@@ -159,7 +162,8 @@ void setup() {
 
   trava.attach(PIN_SERVO);
   trava.write(ANGULO_FECHADO);
-  lcd.begin(16, 2);
+  lcd.init();
+  lcd.backlight();
   mostrarEntrada();
 }
 

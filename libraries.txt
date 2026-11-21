@@ -1,2 +1,2 @@
 Servo
-LiquidCrystal
+LiquidCrystal I2C
