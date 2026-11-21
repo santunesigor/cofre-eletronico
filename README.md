@@ -43,8 +43,6 @@ O LCD I2C dispensa o potenciômetro e o resistor externos do circuito paralelo: 
 
 ## Pinagem
 
-Consulte o [guia de ligações em PDF](ligacoes-cofre-eletronico.pdf) para os diagramas ampliados e a tabela fio a fio.
-
 | Arduino | Ligação |
 | --- | --- |
 | D2–D5 | Linhas da matriz: `1 2 3`, `4 5 6`, `7 8 9`, `Limpar 0 Confirmar` |
