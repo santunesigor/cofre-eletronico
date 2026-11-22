@@ -94,12 +94,13 @@ void holdToChange() {
   release();
 }
 void assertStopped() {
-  assert(!trava.enabled && trava.pulse==SERVO_PARADO_US);
+  assert(trava.enabled && trava.pulse==SERVO_PARADO_US);
 }
 void assertMovement(int start, int direction) {
-  assert(pulseCount==start+2);
+  assert(pulseCount>=start+2);
   assert(pulses[start]==direction && durations[start]==TEMPO_MOVIMENTO_MS);
   assert(pulses[start+1]==SERVO_PARADO_US && durations[start+1]==100);
+  for (int i=start+2;i<pulseCount;i++) assert(pulses[i]==SERVO_PARADO_US);
   assertStopped();
 }
 int main() {
@@ -131,7 +132,7 @@ int main() {
   enter("#");
   assert(modo==NORMAL && !portaAberta);
   assertStopped();
-  assert(pulseCount==1);
+  for (int i=0;i<pulseCount;i++) assert(pulses[i]==SERVO_PARADO_US);
   assert(strcmp(senha,"0000")==0 && EEPROM.writes==1);
   // Simulate RAM returning to its initial value on restart.
   strcpy(senha,"1234"); setup(); assert(strcmp(senha,"0000")==0);
@@ -162,7 +163,9 @@ int main() {
   assert(!portaAberta && strcmp(senha,"0000")==0);
   assert(pulseCount==start+1 && pulses[start]==SERVO_PARADO_US);
   assert(strcmp(lcd.lines[0],"Digite a senha")==0);
-  start=pulseCount; enter("#"); assert(pulseCount==start && !portaAberta);
+  start=pulseCount; enter("#"); assert(!portaAberta);
+  assert(pulseCount==start+1 && pulses[start]==SERVO_PARADO_US);
+  assertStopped();
   assert(SERVO_ABRIR_US>SERVO_PARADO_US && SERVO_FECHAR_US<SERVO_PARADO_US);
   // Invalid persisted bytes must never become a password.
   memcpy(EEPROM.data,"12x4",5); strcpy(senha,"1234"); setup();

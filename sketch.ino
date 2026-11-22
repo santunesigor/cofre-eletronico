@@ -135,8 +135,6 @@ char lerPressionamento() {
 void pararServo() {
   trava.writeMicroseconds(SERVO_PARADO_US);
   delay(100);
-  trava.detach();
-  digitalWrite(PIN_SERVO, LOW);
 }
 
 // shortcut: movimento por tempo nao mede a posicao; use sensores se precisar garantir o fechamento.
