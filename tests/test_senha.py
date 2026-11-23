@@ -27,8 +27,20 @@ void pinMode(byte pin, int mode) {
 int digitalRead(byte pin) {
   return activeRow>=0 && (keys & (1U<<(activeRow*3+pin-6))) ? LOW : HIGH;
 }
-void tone(byte, unsigned int, unsigned long) {}
-void noTone(byte) {}
+struct BuzzerEvent {
+  bool ligado; byte pino; unsigned int frequencia; unsigned long duracao; unsigned long instante;
+};
+BuzzerEvent buzzerEvents[64];
+int buzzerCount=0;
+unsigned long buzzerClockMs=0;
+void tone(byte pino, unsigned int frequencia, unsigned long duracao=0) {
+  assert(buzzerCount<64);
+  buzzerEvents[buzzerCount++]={true,pino,frequencia,duracao,buzzerClockMs};
+}
+void noTone(byte pino) {
+  assert(buzzerCount<64);
+  buzzerEvents[buzzerCount++]={false,pino,0,0,buzzerClockMs};
+}
 struct LiquidCrystal_I2C {
   char lines[2][17] = {}; int x=0, y=0;
   LiquidCrystal_I2C(byte, int, int) {}
@@ -48,6 +60,7 @@ extern Servo trava;
 int pulses[32], pulseCount=0;
 unsigned long durations[32];
 void delay(unsigned long ms) {
+  buzzerClockMs+=ms;
   if (trava.enabled) {
     assert(pulseCount<32);
     pulses[pulseCount]=trava.pulse;
@@ -136,15 +149,35 @@ int main() {
   assert(strcmp(senha,"0000")==0 && EEPROM.writes==1);
   // Simulate RAM returning to its initial value on restart.
   strcpy(senha,"1234"); setup(); assert(strcmp(senha,"0000")==0);
+  int erroBuzzer=buzzerCount;
   enter("1234#"); assert(!portaAberta);
+  assert(buzzerCount==erroBuzzer+1);
+  assert(buzzerEvents[erroBuzzer].ligado && buzzerEvents[erroBuzzer].frequencia==4000);
+  assert(buzzerEvents[erroBuzzer].duracao==1500);
   int start=pulseCount;
+  int aberturaBuzzer=buzzerCount;
+  unsigned long aberturaInicioMs=buzzerClockMs;
   enter("0000#"); assert(portaAberta);
   assertMovement(start,SERVO_ABRIR_US);
+  assert(buzzerCount==aberturaBuzzer+4);
+  assert(buzzerEvents[aberturaBuzzer].ligado && buzzerEvents[aberturaBuzzer].pino==PIN_BUZZER);
+  assert(buzzerEvents[aberturaBuzzer].frequencia==FREQUENCIA_BEEP_ABERTURA_HZ);
+  assert(buzzerEvents[aberturaBuzzer].duracao==0);
+  assert(!buzzerEvents[aberturaBuzzer+1].ligado);
+  assert(buzzerEvents[aberturaBuzzer+2].ligado && buzzerEvents[aberturaBuzzer+2].pino==PIN_BUZZER);
+  assert(buzzerEvents[aberturaBuzzer+2].frequencia==FREQUENCIA_BEEP_ABERTURA_HZ);
+  assert(!buzzerEvents[aberturaBuzzer+3].ligado);
+  assert(buzzerEvents[aberturaBuzzer].instante==aberturaInicioMs+TEMPO_MOVIMENTO_MS+100);
+  assert(buzzerEvents[aberturaBuzzer+1].instante-buzzerEvents[aberturaBuzzer].instante==DURACAO_BEEP_ABERTURA_MS);
+  assert(buzzerEvents[aberturaBuzzer+2].instante-buzzerEvents[aberturaBuzzer+1].instante==INTERVALO_BEEPS_ABERTURA_MS);
+  assert(buzzerEvents[aberturaBuzzer+3].instante-buzzerEvents[aberturaBuzzer+2].instante==DURACAO_BEEP_ABERTURA_MS);
   assert(EEPROM.read(sizeof(senha))==1);
   // Restart with reset RAM while the physical safe is still open.
   portaAberta=false; strcpy(senha,"1234");
   start=pulseCount;
+  int reinicioBuzzer=buzzerCount;
   setup();
+  assert(buzzerCount==reinicioBuzzer+1 && !buzzerEvents[reinicioBuzzer].ligado);
   assert(portaAberta && strcmp(senha,"0000")==0);
   assert(pulseCount==start+1 && pulses[start]==SERVO_PARADO_US);
   assertStopped();
@@ -153,7 +186,9 @@ int main() {
   enter("9*"); assert(portaAberta && quantidade==0);
   tratarTecla(TECLA_TROCAR_SENHA); assert(modo==NORMAL && portaAberta);
   start=pulseCount;
+  int fechamentoBuzzer=buzzerCount;
   enter("#"); assert(!portaAberta);
+  assert(buzzerCount==fechamentoBuzzer);
   assertMovement(start,SERVO_FECHAR_US);
   assert(EEPROM.read(sizeof(senha))==0);
   assert(strcmp(senha,"0000")==0);
@@ -185,4 +220,4 @@ with tempfile.TemporaryDirectory(prefix="cofre-test-") as tmp:
     subprocess.run([os.environ.get("CXX", "g++"), "-std=c++11", "-Wall", "-Wextra",
                     "-Werror", "-I", tmp, str(test), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-print("OK: teclado, debounce, retenção por 5 s, autenticação, limite de 4 dígitos, EEPROM, recuperação aberto/fechado após reiniciar e servo temporizado com parada.")
+print("OK: teclado, autenticação, EEPROM, servo e dois bipes rápidos somente na abertura (70/50/70 ms).")

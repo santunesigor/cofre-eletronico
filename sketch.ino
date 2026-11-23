@@ -20,6 +20,9 @@ Servo trava;
 
 const byte PIN_SERVO = 9;
 const byte PIN_BUZZER = A2;
+const unsigned int FREQUENCIA_BEEP_ABERTURA_HZ = 4000;
+const unsigned long DURACAO_BEEP_ABERTURA_MS = 70;
+const unsigned long INTERVALO_BEEPS_ABERTURA_MS = 50;
 // Codigos internos dos botoes rotulados no circuito.
 const char TECLA_LIMPAR = '*';
 const char TECLA_CONFIRMAR = '#';
@@ -145,10 +148,20 @@ void moverServo(int pulso) {
   pararServo();
 }
 
+void tocarBipesAbertura() {
+  for (byte i = 0; i < 2; i++) {
+    tone(PIN_BUZZER, FREQUENCIA_BEEP_ABERTURA_HZ);
+    delay(DURACAO_BEEP_ABERTURA_MS);
+    noTone(PIN_BUZZER);
+    if (i == 0) delay(INTERVALO_BEEPS_ABERTURA_MS);
+  }
+}
+
 void abrirPorta() {
   EEPROM.update(sizeof(senha), 1);
   moverServo(SERVO_ABRIR_US);
   portaAberta = true;
+  tocarBipesAbertura();
   mostrarEntrada();
 }
 

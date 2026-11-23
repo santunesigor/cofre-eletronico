@@ -7,7 +7,7 @@ Protótipo didático de um cofre eletrônico com Arduino Uno, senha numérica, d
 - A senha possui quatro dígitos; a senha inicial é `1234`, usada quando ainda não há senha válida salva na EEPROM.
 - O teclado é uma matriz 4×3 construída com 12 botões individuais. O programa faz a leitura da matriz e aplica debounce de 40 ms.
 - O LCD mostra os dígitos como asteriscos. **Limpar** apaga toda a entrada e **Confirmar** valida a senha.
-- Uma senha correta aciona o servo em um sentido por 500 ms, envia o comando de parada e mantém o cofre aberto até o usuário pressionar **Confirmar** novamente.
+- Uma senha correta aciona o servo em um sentido por 500 ms, envia o comando de parada e toca **dois bipes rápidos de confirmação** (4 kHz, 70 ms cada, com intervalo de 50 ms). O cofre permanece aberto até o usuário pressionar **Confirmar** novamente.
 - Enquanto aberto, o LCD exibe `Para fechar:` na primeira linha e `Aperte Confirmar` na segunda. Os demais botões são ignorados nesse estado.
 - Todas as mensagens cabem nas 16 colunas de cada linha do LCD e permanecem estáticas para facilitar a leitura.
 - Ao fechar, o servo gira no sentido contrário por 500 ms e para; o sistema fica pronto para uma nova senha.
