@@ -1,0 +1,25 @@
+name: Preparar scanner do LCD
+on:
+  push:
+    branches: [main]
+    paths: ['recuperacao.html','package.json','scripts/prepare-ocr.cjs','tests/test_scanner.cjs','.github/workflows/scanner.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: npm run test:scanner
+      - run: npm run prepare:ocr
+      - uses: actions/upload-artifact@v4
+        with:
+          name: calculador-com-scanner
+          path: |
+            recuperacao.html
+            ocr/

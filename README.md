@@ -25,6 +25,12 @@ Após três senhas completas incorretas consecutivas, o LCD mostra um identifica
 
 A função SipHash-2-4 usa a chave de 16 caracteres ASCII e a mensagem de oito bytes little-endian correspondente ao ID hexadecimal. O resultado reduzido módulo 1.000.000 produz o código de seis dígitos (incluindo zeros à esquerda). O ID combina um contador persistente de sessões e uma janela de tempo, não depende de internet nem de relógio externo. A chave deve ser gerada aleatoriamente e guardada; sem ela, a recuperação exige manutenção física do firmware/EEPROM. Configure em ambiente confiável. Este é um protótipo: a EEPROM não é protegida contra leitura ou regravação física e o código de seis dígitos não oferece segurança equivalente a um cofre certificado.
 
+### Scanner do LCD
+
+O calculador também lê a primeira linha do LCD pela câmera (OCR local), confirma o mesmo ID em duas capturas consecutivas e calcula automaticamente se a chave estiver preenchida. Há opção de foto e digitação manual. Confira sempre o ID reconhecido antes de usar a contrassenha.
+
+Para preparar os arquivos OCR, com Node.js instalado, execute `npm install` e `npm run prepare:ocr`. Depois sirva a pasta com `python3 -m http.server 8000` e abra `http://localhost:8000/recuperacao.html` no próprio computador. Para o celular, hospede o HTML e a pasta `ocr/` juntos em um endereço HTTPS; HTTP por IP da rede local normalmente não permite acesso à câmera. O workflow **Preparar scanner do LCD** gera um ZIP pronto com os arquivos OCR. Nenhuma imagem ou chave é enviada a serviços externos; as bibliotecas e modelos são distribuídos localmente no pacote. A digitação manual funciona mesmo sem os arquivos OCR.
+
 ## Temporização por hardware
 
 O Arduino Uno R3 (ATmega328P, 16 MHz) usa o **Timer2 em modo CTC**, com prescaler 8 e OCR2A = 249, gerando uma interrupção a cada 125 µs (8 kHz). A interrupção incrementa um contador de ticks e alterna o pino A2 quando o buzzer está ativo, produzindo 4 kHz. O Timer1 permanece reservado à biblioteca Servo; o Timer0 do núcleo Arduino não é reconfigurado.

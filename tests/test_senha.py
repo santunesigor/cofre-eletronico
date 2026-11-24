@@ -160,7 +160,7 @@ int main() {
   snprintf(recovery,sizeof(recovery),"%06lu",(unsigned long)((codigoRec()+1)%1000000));
   enter(recovery); enter("#"); assert(fase==ESPERA_REC && bloqueado());
   runMs(30000); assert(fase==LIVRE && bloqueado());
-  snprintf(recovery,sizeof(recovery),"%06lu",(unsigned long)codigoRec());
+  snprintf(recovery,sizeof(recovery),"%06lu",(unsigned long)(codigoRec()%1000000));
   enter(recovery); enter("#"); assert(!bloqueado() && !portaAberta && erros==0);
   assert(strcmp(lcd.lines[0],"Digite a senha")==0);
   enter("0000#");
