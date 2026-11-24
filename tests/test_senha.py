@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+# Substitutos das APIs do Uno para executar o sketch no computador.
 STUBS = r'''
 #pragma once
 #include <stdint.h>
@@ -21,6 +22,7 @@ const int PC2=2, WGM21=1, OCF2A=1, OCIE2A=1, CS21=1;
 uint8_t TCCR2A=0,TCCR2B=0,TCNT2=0,OCR2A=0,TIFR2=0,TIMSK2=0,PINC=0,PORTC=0;
 unsigned int keys=0;
 int activeRow=-1;
+// O simulador responde LOW só na coluna da linha selecionada.
 void digitalWrite(byte, int) {}
 void pinMode(byte pin, int mode) {
   if (pin>=2 && pin<=5) {
@@ -32,6 +34,7 @@ int digitalRead(byte pin) {
   return activeRow>=0 && (keys & (1U<<(activeRow*3+pin-6))) ? LOW : HIGH;
 }
 struct LiquidCrystal_I2C {
+  // O assert em print detecta texto que ultrapassa a matriz física de 16 × 2.
   char lines[2][17] = {}; int x=0, y=0;
   LiquidCrystal_I2C(byte, int, int) {}
   void clear() { memset(lines,0,sizeof(lines)); x=y=0; }
@@ -41,12 +44,14 @@ struct LiquidCrystal_I2C {
   void init() {} void backlight() {}
 };
 struct Servo {
+  // Guarde o último pulso para conferir direção e parada sem motor físico.
   int pulse=-1; bool enabled=false;
   void attach(byte) { enabled=true; }
   void detach() { enabled=false; }
   void writeMicroseconds(int value) { pulse=value; }
 };
 struct EEPROMClass {
+  // A mesma instância sobrevive às reinicializações simuladas.
   char data[1024]; int writes=0;
   EEPROMClass() { memset(data,255,sizeof(data)); }
   byte read(int address) { assert(address>=0 && address<1024); return data[address]; }
@@ -66,15 +71,18 @@ struct EEPROMClass {
 } EEPROM;
 '''
 TESTS = r'''
+// Avance o Timer2 a cada chamada. O teste não espera tempo de relógio real.
 void ticks(uint32_t count) {
   while (count--) { TIMER2_COMPA_vect(); loop(); }
 }
 void runMs(uint32_t ms) { ticks(ms * TICKS_POR_MS); }
+// enter envia teclas já reconhecidas; press passa pela varredura e pelo debounce.
 void enter(const char *text) { while (*text) tratarTecla(*text++); }
 void release() { keys=0; runMs(50); }
 void press(unsigned int mask) { keys=mask; runMs(50); release(); }
 void stopped() { assert(trava.enabled && trava.pulse==SERVO_PARADO_US); }
 void restart() {
+  // Recrie a partida e preserve a EEPROM simulada.
   strcpy(senha,"1234"); modo=NORMAL; quantidade=0; digitado[0]=0;
   keys=0; setup(); runMs(100); assert(fase==LIVRE || fase==ESPERA_REC); stopped();
 }
@@ -89,6 +97,7 @@ void wrongPassword() {
   runMs(1); assert(fase==LIVRE && quantidade==0);
 }
 int main() {
+  // Primeiro uso: código visível, três pressões, cadastro e confirmação do PIN.
   restart();
   assert(OCR2A==249 && TCCR2A==_BV(WGM21) && TCCR2B==_BV(CS21));
   assert(TIMSK2==_BV(OCIE2A));
@@ -109,14 +118,19 @@ int main() {
   restart();
   assert(confirmacoesChave==0 && strcmp(lcd.lines[0],"Defina seu PIN")==0);
   enter("4321#");
+  assert(confirmandoPin && strcmp(lcd.lines[0],"Confirme seu PIN")==0);
+  assert(EEPROM.read(ADDR_REC_MAGIC)==PIN_PENDENTE && EEPROM.read(ADDR_PIN)==255);
+  enter("4320#");
+  assert(strcmp(lcd.lines[0],"PINs diferentes")==0 && EEPROM.read(ADDR_PIN)==255);
+  runMs(1200);
+  assert(strcmp(lcd.lines[0],"Defina seu PIN")==0);
+  enter("4321#4321#");
   assert(!portaAberta && strcmp(lcd.lines[0],"PIN cadastrado!")==0);
   assert(chaveConfigurada && EEPROM.read(ADDR_REC_MAGIC)==REC_MAGIC);
-  assert(memcmp(chaveRec,key,16)==0);
+  assert(memcmp(codigoRec,key,16)==0);
   restart(); assert(chaveConfigurada);
   assert(strcmp(lcd.lines[0],"Digite a senha")==0 && strcmp(senha,"4321")==0);
-  // Vetor oficial SipHash para mensagem de oito bytes 00..07.
-  char vectorKey[16]; for (int i=0;i<16;i++) vectorKey[i]=char(i);
-  assert(sipHash8(vectorKey,0x0706050403020100ULL)==0x93f5f5799a932462ULL);
+  // Confira a correspondência entre as 12 teclas físicas e a tabela do firmware.
   for (int key=0; key<12; ++key) {
     keys=1U<<key;
     char read=0; bool done=false;
@@ -136,6 +150,7 @@ int main() {
   runMs(1000); assert(quantidade==1); release();
   press(1U<<9); assert(quantidade==0);
   const unsigned int combo=(1U<<9)|(1U<<11);
+  // Segurar por menos de cinco segundos não entra no menu de troca do PIN.
   keys=combo; runMs(4900); release(); assert(modo==NORMAL);
   keys=combo; runMs(5040); assert(modo==NORMAL);
   runMs(2); assert(modo==VALIDAR_ATUAL && !portaAberta);
@@ -148,53 +163,48 @@ int main() {
   enter("432#"); assert(fase==AVISO_PRESERVAR && quantidade==3);
   runMs(900); assert(fase==LIVRE && quantidade==3);
   enter("1#"); assert(modo==DEFINIR_NOVA && quantidade==0);
-  assert(strcmp(lcd.lines[0],"Nova senha:")==0);
+  assert(strcmp(lcd.lines[0],"Novo PIN:")==0);
   enter("56#"); runMs(900);
   assert(modo==DEFINIR_NOVA && quantidade==2 && erros==0);
-  enter("*000078#"); assert(fase==AVISO_LIMPAR);
+  enter("*000078#"); assert(confirmandoPin && strcmp(senha,"4321")==0);
+  enter("0000#"); assert(fase==AVISO_LIMPAR);
   assert(strcmp(senha,"0000")==0 && erros==0);
   runMs(1200); assert(fase==LIVRE && modo==NORMAL && quantidade==0);
   stopped(); restart(); assert(strcmp(senha,"0000")==0);
   enter("1234#"); wrongPassword(); assert(erros==1);
+  // O contador persiste após reiniciar e o terceiro erro abre a tela de recuperação.
   restart(); assert(erros==1);
   enter("1234#"); wrongPassword(); assert(erros==2);
   enter("1234#"); wrongPassword(); assert(bloqueado());
-  assert(strcmp(lcd.lines[0],"Digite a contras")==0);
-  assert(strcmp(lcd.lines[1],"Use sua chave de")==0);
-  runMs(ROLAGEM_MS);
-  assert(strcmp(lcd.lines[0],"igite a contrass")==0);
-  assert(strcmp(lcd.lines[1],"se sua chave de ")==0);
-  runMs(CICLO_MSG_MS-2*ROLAGEM_MS);
-  assert(strcmp(lcd.lines[0],"e a contrassenha")==0);
-  assert(strcmp(lcd.lines[1],"e de recuperacao")==0);
-  runMs(ROLAGEM_MS);
-  assert(strcmp(lcd.lines[0],"ID: 000000010000")==0);
-  assert(strcmp(lcd.lines[1],"Escaneie o ID   ")==0);
-  enter("0");
-  assert(strcmp(lcd.lines[0],"Contrassenha:")==0);
-  assert(strcmp(lcd.lines[1],"PIN: *")==0);
-  runMs(1000);
-  assert(strcmp(lcd.lines[0],"Contrassenha:")==0);
-  assert(strcmp(lcd.lines[1],"PIN: *")==0);
-  enter("*");
-  assert(strcmp(lcd.lines[0],"Digite a contras")==0);
-  assert(strcmp(lcd.lines[1],"Use sua chave de")==0);
-  uint32_t session=sessaoRec;
-  uint32_t first=codigoRec();
-  enter("0000#"); assert(!portaAberta && bloqueado());
-  enter("*");
-  runMs(60000); assert(janelaRec==1 && qtdRec==0);
-  assert(codigoRec()!=first); // this fixed test key has different outputs
+  assert(strcmp(lcd.lines[0],"Cod. recuperacao")==0);
+  // Verifique cada comprimento, inclusive a linha cheia e a rejeição do 17º dígito.
+  for (int n=1; n<=16; ++n) {
+    tratarTecla(key[n-1]);
+    assert(strlen(lcd.lines[1])==size_t(n) && lcd.lines[1][n-1]=='*');
+  }
+  enter("9"); assert(strcmp(lcd.lines[1],"****************")==0);
+  enter("*"); assert(lcd.lines[1][0]==0);
+  enter("0000#"); runMs(900);
+  assert(bloqueado() && quantidade==4 && strcmp(lcd.lines[1],"****")==0);
   restart(); assert(bloqueado() && fase==ESPERA_REC);
-  runMs(30000); assert(sessaoRec!=session && fase==LIVRE);
-  char recovery[7];
-  snprintf(recovery,sizeof(recovery),"%06lu",(unsigned long)((codigoRec()+1)%1000000));
-  enter(recovery); enter("#"); assert(fase==ESPERA_REC && bloqueado());
-  runMs(30000); assert(fase==LIVRE && bloqueado());
-  snprintf(recovery,sizeof(recovery),"%06lu",(unsigned long)(codigoRec()%1000000));
-  enter(recovery); enter("#"); assert(!bloqueado() && !portaAberta && erros==0);
-  assert(strcmp(lcd.lines[0],"Digite a senha")==0);
-  enter("0000#");
+  runMs(30000); assert(fase==LIVRE && quantidade==0);
+  enter(key); enter("#0099#");
+  assert(bloqueado() && confirmandoPin && !portaAberta);
+  // Reiniciar durante a confirmação exige o código de novo.
+  restart(); assert(bloqueado() && fase==ESPERA_REC);
+  runMs(30000);
+  enter("9999999999999999#"); assert(fase==ESPERA_REC && bloqueado());
+  runMs(29999); assert(fase==ESPERA_REC);
+  runMs(1); assert(fase==LIVRE && bloqueado());
+  enter(key); enter("#"); assert(bloqueado() && !portaAberta);
+  assert(strcmp(lcd.lines[0],"Novo PIN:")==0);
+  enter("0073#0072#"); runMs(1200);
+  assert(bloqueado() && strcmp(senha,"0000")==0 && strcmp(lcd.lines[0],"Novo PIN:")==0);
+  enter("0073#0073#"); runMs(1200);
+  assert(!bloqueado() && !portaAberta && erros==0);
+  assert(strcmp(lcd.lines[0],"Digite a senha")==0 && strcmp(senha,"0073")==0);
+  enter("0073#");
+  // Avance até a borda de cada intervalo para pegar transições adiantadas ou atrasadas.
   assert(fase==ABRINDO && !portaAberta && trava.pulse==SERVO_ABRIR_US);
   assert(EEPROM.read(sizeof(senha))==1);
   runMs(499); assert(trava.pulse==SERVO_ABRIR_US && !buzzerLigado);
@@ -234,10 +244,10 @@ int main() {
   assert(!buzzerLigado && fase==AVISO_LIMPAR);
   assert(consultarHistorico(0,seqLog,eventoLog) && eventoLog==EV_FECHAMENTO);
   runMs(800); assert(fase==LIVRE);
-  restart(); assert(!portaAberta && strcmp(senha,"0000")==0);
+  restart(); assert(!portaAberta && strcmp(senha,"0073")==0);
   enter("#"); runMs(900); stopped();
   ticksTimer=UINT32_MAX-100;
-  enter("0000#"); runMs(499); assert(fase==ABRINDO);
+  enter("0073#"); runMs(499); assert(fase==ABRINDO);
   runMs(1); stopped(); assert(fase==NEUTRO_ABERTURA);
   restart(); assert(portaAberta);
   memcpy(EEPROM.data,"12x4",5); restart(); assert(strcmp(senha,"1234")==0);
@@ -265,11 +275,12 @@ int main() {
   const char chaveAnterior[16] = {'9','8','7','6','5','4','3','2','1','0','9','8','7','6','5','4'};
   EEPROM.put(ADDR_CHAVE, chaveAnterior);
   restart();
-  assert(confirmacoesChave==0 && memcmp(chaveRec,chaveAnterior,16)==0);
+  assert(confirmacoesChave==0 && memcmp(codigoRec,chaveAnterior,16)==0);
 }
 '''
 
 with tempfile.TemporaryDirectory(prefix="cofre-test-") as tmp:
+    # Monte um sketch isolado com código de demonstração e bibliotecas simuladas.
     folder = Path(tmp)
     (folder / "Wire.h").write_text(STUBS)
     for directory, header in [("avr", "interrupt.h"), ("util", "atomic.h")]:
@@ -287,4 +298,4 @@ with tempfile.TemporaryDirectory(prefix="cofre-test-") as tmp:
     subprocess.run([os.environ.get("CXX", "g++"), "-std=c++11", "-Wall", "-Wextra",
                     "-Werror", "-I", tmp, str(test), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-print("OK: Timer2, teclado, senha, EEPROM, servo, bipes, SipHash, recuperação e histórico circular persistente.")
+print("OK: Timer2, teclado, senha, EEPROM, servo, bipes, recuperação e confirmação de PIN e histórico circular persistente.")

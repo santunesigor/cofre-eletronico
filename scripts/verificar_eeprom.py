@@ -1,37 +1,28 @@
-"""Confirma pela serial que o Arduino Uno apagou os 1.024 bytes."""
+"""Lê do Arduino a confirmação dos 1.024 bytes apagados."""
 
-import os
-import select
-import sys
-import termios
 import time
-import tty
 
 
 def verificar(porta):
-    fd = os.open(porta, os.O_RDWR | os.O_NOCTTY)
+    from serial import Serial, SerialException
+
     try:
-        tty.setraw(fd)
-        config = termios.tcgetattr(fd)
-        config[4] = config[5] = termios.B115200
-        termios.tcsetattr(fd, termios.TCSANOW, config)
-        termios.tcflush(fd, termios.TCIFLUSH)
-        esperado = b"EEPROM bytes FF: 1024/1024"
-        dados = b""
-        limite = time.monotonic() + 15
-        while time.monotonic() < limite:
-            os.write(fd, b"?")
-            if select.select([fd], [], [], 0.4)[0]:
-                dados += os.read(fd, 4096)
+        # Use o mesmo baud rate do sketch LimparEEPROM e feche a porta ao sair.
+        with Serial(porta, 115200, timeout=0.3, write_timeout=1) as conexao:
+            conexao.reset_input_buffer()
+            dados = b""
+            limite = time.monotonic() + 15
+            while time.monotonic() < limite:
+                # Abrir a porta pode reiniciar o Uno. Consulte até ele responder.
+                conexao.write(b"?")
+                dados += conexao.read(128)
                 linhas = dados.split(b"\n")
-                dados = linhas.pop()
-                if any(linha.rstrip(b"\r") == esperado for linha in linhas):
-                    print(esperado.decode())
+                dados = linhas.pop()  # O fim da linha pode chegar na leitura seguinte.
+                if any(linha.rstrip(b"\r") == b"EEPROM bytes FF: 1024/1024" for linha in linhas):
+                    print("EEPROM bytes FF: 1024/1024")
                     return True
-    finally:
-        os.close(fd)
+    except SerialException as erro:
+        print(f"Não foi possível verificar a EEPROM pela serial: {erro}")
+        return False
+    print("Tempo esgotado ao verificar a EEPROM pela serial.")
     return False
-
-
-if __name__ == "__main__" and not verificar(sys.argv[1]):
-    raise SystemExit("Tempo esgotado ao verificar a EEPROM pela serial.")

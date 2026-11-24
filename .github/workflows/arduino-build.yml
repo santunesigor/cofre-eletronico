@@ -28,6 +28,7 @@ jobs:
           import json
           from pathlib import Path
           circuit = json.loads(Path("diagram.json").read_text())
+          # Confira os atributos e os quatro fios do LCD que o sketch espera.
           parts = {p["id"]: p for p in circuit["parts"]}
           assert parts["lcd"]["attrs"]["pins"] == "i2c"
           assert parts["lcd"]["attrs"]["i2cAddress"] == "0x27"
@@ -44,11 +45,12 @@ jobs:
           print("Circuito LCD I2C validado.")
           PY
 
-      - name: Testar teclado e troca de senha
+      - name: Testar firmware e recuperação do PIN
         run: python3 tests/test_senha.py
 
       - name: Compilar sketch para Arduino Uno R3
         run: |
+          # Arduino CLI exige que o arquivo principal tenha o mesmo nome da pasta.
           mkdir -p "$RUNNER_TEMP/cofre_eletronico"
           cp sketch.ino "$RUNNER_TEMP/cofre_eletronico/cofre_eletronico.ino"
           arduino-cli compile --fqbn arduino:avr:uno "$RUNNER_TEMP/cofre_eletronico"

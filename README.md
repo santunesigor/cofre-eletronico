@@ -2,7 +2,44 @@
 
 Protótipo didático de um cofre eletrônico com Arduino Uno, senha numérica, display LCD, servomotor e alerta sonoro. Usamos o **Wokwi** como simulador do circuito.
 
-Consulte o [guia de controles e bateria de testes](GUIA_TESTES.md) para operar e validar esta versão passo a passo.
+Consulte o [roteiro de apresentação](APRESENTACAO.md) para demonstrar o projeto e o [guia de controles e testes](GUIA_TESTES.md) para ensaiar cada função.
+
+## Como gravar no Arduino
+
+O gravador foi preparado para Linux, macOS e Windows com um **Arduino Uno R3 ou compatível com ATmega328P**. Depois da [instalação inicial](#instalação-inicial), conecte a placa por USB, feche o Monitor Serial e rode na pasta do projeto:
+
+| Sistema | Gravar com detecção automática | Listar portas sem gravar |
+| --- | --- | --- |
+| Linux ou macOS | `./scripts/gravar.sh` | `./scripts/gravar.sh --portas` |
+| Windows | `py -3 scripts/gravar.py` | `py -3 scripts/gravar.py --portas` |
+
+Se houver exatamente um Uno reconhecido, o gravador seleciona a porta. Se houver mais de um ou se seu clone não for reconhecido, liste as portas e passe a correta no comando. Exemplos: `./scripts/gravar.sh /dev/ttyACM1` no Linux, `./scripts/gravar.sh /dev/cu.usbmodem1101` no macOS ou `py -3 scripts/gravar.py COM3` no Windows. Use a porta que aparecer no seu computador.
+
+**Cada gravação apaga o PIN, o código de recuperação e o histórico.** Aguarde a mensagem `EEPROM limpa e firmware gravado e verificado.` Depois anote os 16 dígitos do LCD, pressione **Confirmar** três vezes e digite o novo PIN duas vezes para salvá-lo.
+
+Se a porta não aparecer, confira o cabo USB de dados e feche o Monitor Serial. Para resolver erro de permissão no Linux, consulte o [roteiro de apresentação](APRESENTACAO.md#regravar-por-conta-própria).
+
+### Instalação inicial
+
+Instale estas ferramentas uma vez em cada computador antes de gravar.
+
+1. Instale o Python 3 e o [Arduino CLI](https://docs.arduino.cc/arduino-cli/installation). O comando `arduino-cli version` deve funcionar no terminal.
+2. Na raiz do projeto, instale o pySerial com `python3 -m pip install -r requirements.txt` no Linux/macOS ou `py -3 -m pip install -r requirements.txt` no Windows. Se o Linux/macOS bloquear instalações no Python do sistema, rode `python3 -m venv .venv`, depois `. .venv/bin/activate` e repita a instalação. Se o pySerial já estiver instalado, pule esta etapa.
+3. Instale o suporte ao Uno e as bibliotecas:
+
+```bash
+arduino-cli core update-index
+arduino-cli core install arduino:avr
+arduino-cli lib install Servo "LiquidCrystal I2C"
+```
+
+Se o CLI estiver fora do `PATH`, indique o caminho do executável na variável `ARDUINO_CLI`.
+
+### Por que fizemos assim
+
+- **Para levar o projeto a outro computador.** A mesma placa pode aparecer como `COM3` no Windows e `/dev/ttyACM1` no Linux. O Python e o pySerial permitem usar o mesmo gravador nos três sistemas. Quando há um único Uno reconhecido, o script escolhe a porta. Se houver dúvida, cabe ao operador indicar qual placa quer gravar.
+- **Para demonstrar o primeiro uso de forma previsível.** Apagar a EEPROM remove o PIN, o código de recuperação e o histórico usados em ensaios anteriores. O script sorteia um novo código e usa um arquivo temporário privado durante a compilação. Assim, o código da unidade não precisa ficar no repositório.
+- **Para conferir as duas etapas da gravação.** O script compila tudo antes de alterar a placa. Depois, o programa auxiliar verifica os 1.024 bytes da EEPROM e o Arduino CLI confere o firmware gravado na flash. São duas verificações porque a EEPROM guarda os dados do cofre e a flash guarda o programa.
 
 ## Funcionamento
 
@@ -11,51 +48,37 @@ Consulte o [guia de controles e bateria de testes](GUIA_TESTES.md) para operar e
 - O LCD mostra os dígitos como asteriscos. **Limpar** apaga toda a entrada e **Confirmar** valida a senha.
 - Uma senha correta aciona o servo em um sentido por 500 ms, envia o comando de parada e toca **dois bipes rápidos de confirmação** (4 kHz, 70 ms cada, com intervalo de 50 ms). O cofre permanece aberto até o usuário pressionar **Confirmar** novamente.
 - Enquanto aberto, o LCD exibe `Para fechar:` na primeira linha e `Aperte Confirmar` na segunda. Os demais botões são ignorados nesse estado, exceto `0` para consultar o histórico após uma abertura autenticada.
-- As mensagens normais permanecem estáticas. No bloqueio por três erros, as frases de recuperação rolam nas duas linhas do LCD.
+- As mensagens do LCD permanecem estáticas, inclusive no bloqueio.
 - Ao fechar, o servo gira no sentido contrário por 500 ms e para; o sistema fica pronto para uma nova senha.
 - Uma senha incorreta mantém o cofre fechado, exibe uma mensagem de erro e aciona o buzzer a 4.000 Hz por 1,5 segundo. Após a mensagem, a entrada é limpa para uma nova tentativa.
 - Confirmar com menos de quatro dígitos mostra `Digite 4 numeros` e preserva a entrada para completá-la.
 - Ao iniciar ou reiniciar, o sistema envia apenas o comando de parada ao servo e recupera a senha e o estado aberto/fechado da EEPROM. Se desligar aberto, ao religar o LCD mostra `Para fechar:` / `Aperte Confirmar`; pressione **Confirmar** para fechar normalmente. Na primeira gravação desta versão, sem estado salvo, o programa assume fechado: alinhe a trava nessa posição antes do primeiro uso.
-- Para trocar a senha, com o cofre fechado, segure **Limpar + Confirmar juntos por 5 segundos** e solte os dois. O LCD pede `Senha atual:`; digite os quatro números atuais e pressione **Confirmar**. Em `Nova senha:`, digite exatamente quatro números e pressione **Confirmar** para salvar.
+- Para trocar a senha, com o cofre fechado, segure **Limpar + Confirmar juntos por 5 segundos** e solte os dois. O LCD pede `Senha atual:`; digite os quatro números atuais e pressione **Confirmar**. Em `Novo PIN:`, digite quatro números, confirme, repita o novo PIN e confirme para salvar.
 - Durante a troca, **Limpar** apaga a entrada, dígitos além do quarto são ignorados e uma senha atual incorreta impede a alteração. A nova senha permanece salva após desligar o Arduino.
 
 ## Histórico de acessos
 
-O firmware mantém os últimos **120 eventos** na EEPROM (endereços 32 a 991), incluindo inicializações, aberturas e fechamentos comandados, PIN incorreto, bloqueio, contrassenha incorreta, recuperação bem-sucedida e alteração de senha. Não armazena os dígitos informados nem a chave de recuperação no histórico. Não há data e hora de calendário porque o Uno não possui RTC; os registros são ordenados por sequência.
+O firmware mantém os últimos **120 eventos** na EEPROM (endereços 32 a 991), incluindo inicializações, aberturas e fechamentos comandados, PIN incorreto, bloqueio, código de recuperação incorreto, recuperação bem-sucedida e alteração de senha. Não armazena os dígitos informados nem o código de recuperação no histórico. Não há data e hora de calendário porque o Uno não possui RTC; os registros são ordenados por sequência.
 
 Para consultar, abra o cofre com a senha e pressione **0** enquanto estiver aberto. O LCD mostra `Reg. 001/120` (posição do registro e total existente) e o tipo do evento. Pressione **2** para registros mais antigos, **8** para mais recentes e **Limpar** ou **Confirmar** para voltar à tela de fechamento. O histórico também sai após 30 segundos sem navegação. Após reiniciar com o cofre aberto, é necessário fechá-lo e autenticar-se novamente para consultar.
 
 A memória é circular: ao lotar, o próximo evento substitui o mais antigo. Cada registro usa número sequencial, tipo, CRC-16 e marcador de validade gravado por último. Uma gravação interrompida pode perder o registro em curso, mas não invalida os demais. Os registros sobrevivem a reinícios; sem sensores, abertura e fechamento correspondem à conclusão do comando do servo, não à confirmação física da porta. O histórico não é inviolável contra acesso físico à EEPROM.
 
-## Bloqueio e contrassenha (versão em desenvolvimento)
+## Bloqueio e código de recuperação
 
-Para preparar ou reinicializar uma unidade pelo Linux, use Python 3 e Arduino CLI com o pacote `arduino:avr` e as bibliotecas de `libraries.txt`. Informe a porta USB do Uno:
+### Compilação manual
 
-```bash
-scripts/gravar.sh /dev/ttyACM0
-```
-
-O script gera uma chave aleatória de 16 dígitos e compila em uma pasta temporária privada. Depois apaga e verifica toda a EEPROM, incluindo o PIN, a chave e o histórico anteriores, e grava o firmware. Se o CLI estiver fora do `PATH`, indique o executável na variável `ARDUINO_CLI`.
-
-Para uma compilação manual, execute `python3 scripts/gerar_chave.py` em uma cópia privada do projeto. O script cria `chave_dispositivo.h` na pasta do `sketch.ino`. Mantenha o cabeçalho e o binário em local privado. Em EEPROM vazia, uma compilação sem o cabeçalho exibe `Chave ausente`. A gravação manual sem limpeza da EEPROM preserva a chave já cadastrada.
+Para uma compilação manual, execute `python3 scripts/gerar_chave.py` em uma cópia privada do projeto. O script cria `chave_dispositivo.h` na pasta do `sketch.ino`. Mantenha o cabeçalho e o binário em local privado. Em EEPROM vazia, uma compilação sem o cabeçalho exibe `Codigo ausente`. A gravação manual sem limpeza da EEPROM preserva o código já cadastrado.
 
 Cubra o LCD com o [adesivo de recuperação](adesivo-recuperacao.svg), impresso em material opaco a 100% da escala. O modelo mede 64,5 × 16 mm e cobre apenas a janela do LCD. Confira a medida da janela do seu modelo.
 
-Na primeira inicialização com o cofre fechado, o firmware salva a chave na EEPROM e a exibe no LCD. Retire o adesivo, anote os 16 dígitos em local seguro e pressione **Confirmar** três vezes separadas. A terceira pressão encerra a exibição mesmo após reiniciar. Se desligar antes dela, a chave volta a aparecer e são pedidas três pressões. O Arduino Uno não oferece armazenamento seguro para esta chave. Ela pode ser lida por quem tiver acesso à memória da placa.
+Na primeira inicialização com o cofre fechado, o firmware salva o código na EEPROM e o exibe no LCD. Retire o adesivo, anote os 16 dígitos em local seguro e pressione **Confirmar** três vezes separadas. A terceira pressão encerra a exibição mesmo após reiniciar. Se desligar antes dela, o código volta a aparecer e são pedidas três pressões. O Arduino Uno não oferece armazenamento seguro para esse código. Ele pode ser lido por quem tiver acesso à memória da placa.
 
-Em `Defina seu PIN`, escolha quatro dígitos e pressione **Confirmar** para salvar. Se desligar antes de salvar, o cofre volta à tela de cadastro do PIN. Depois de cadastrar, digite o PIN escolhido para abrir o cofre.
+Em `Defina seu PIN`, escolha quatro dígitos e pressione **Confirmar**. Em `Confirme seu PIN`, digite o mesmo PIN e confirme. Se os PINs divergirem, escolha e confirme novamente. Se desligar antes de salvar, o cofre volta à tela de cadastro com o código oculto.
 
-Após três senhas completas incorretas consecutivas, o LCD rola as mensagens `Digite a contrassenha` e `Use sua chave de recuperacao`, alternando com a exibição estática do identificador (ID) de 12 caracteres hexadecimais por seis segundos. Ao digitar o primeiro número, a rolagem para e o LCD apresenta `Contrassenha:` e `PIN: ` seguido de asteriscos. Pressionar Limpar volta ao aviso e permite escanear novamente. O ID muda a cada minuto usando o Timer2; o Arduino não tem relógio de calendário. Informe a chave secreta e o ID atual no calculador offline. Digite a contrassenha de seis dígitos no cofre e pressione Confirmar. Uma contrassenha válida apenas libera a digitação do PIN normal, sem abrir diretamente a trava. Uma tentativa de recuperação errada exige 30 segundos de espera e gera uma nova sessão. Reiniciar não elimina o bloqueio e também exige espera antes de apresentar um novo ID. O contador de erros é zerado após autenticação normal correta ou recuperação válida.
+Após três PINs completos incorretos consecutivos, o LCD mostra `Cod. recuperacao`. Digite diretamente os 16 números anotados no primeiro uso e pressione **Confirmar**. A segunda linha mostra um asterisco por dígito, e **Limpar** apaga a entrada. Se o código estiver correto, escolha e confirme um novo PIN de quatro dígitos. O cofre só sai do bloqueio quando o novo PIN é salvo. Depois, use o novo PIN para abrir.
 
-A função SipHash-2-4 usa a chave de 16 caracteres ASCII e a mensagem de oito bytes little-endian correspondente ao ID hexadecimal. O resultado reduzido módulo 1.000.000 produz o código de seis dígitos (incluindo zeros à esquerda). O ID combina um contador persistente de sessões e uma janela de tempo, não depende de internet nem de relógio externo. A chave deve ser gerada aleatoriamente e guardada; sem ela, a recuperação exige manutenção física do firmware/EEPROM. Configure em ambiente confiável. Este é um protótipo: a EEPROM não é protegida contra leitura ou regravação física e o código de seis dígitos não oferece segurança equivalente a um cofre certificado.
-
-### Scanner do LCD
-
-O calculador também lê a primeira linha do LCD pela câmera (OCR local), confirma o mesmo ID em duas capturas consecutivas e calcula automaticamente se a chave estiver preenchida. Há opção de foto e digitação manual. Confira sempre o ID reconhecido antes de usar a contrassenha.
-
-Para preparar os arquivos OCR, com Node.js instalado, execute `npm install` e `npm run prepare:ocr`. Depois sirva a pasta com `python3 -m http.server 8000` e abra `http://localhost:8000/recuperacao.html` no próprio computador. Para o celular, hospede o HTML e a pasta `ocr/` juntos em um endereço HTTPS; HTTP por IP da rede local normalmente não permite acesso à câmera. O workflow **Preparar scanner do LCD** gera um ZIP pronto com os arquivos OCR. Nenhuma imagem ou chave é enviada a serviços externos; as bibliotecas e modelos são distribuídos localmente no pacote. A digitação manual funciona mesmo sem os arquivos OCR.
-
-Para disponibilizar no celular via GitHub Pages, em **Settings → Pages → Build and deployment → Source**, selecione **GitHub Actions**. Depois abra o workflow **Preparar scanner do LCD**, clique em **Run workflow** e marque `publicar`. O workflow publica o calculador e os arquivos OCR juntos, via HTTPS. O código publicado não contém a sua chave secreta.
+Um código completo incorreto inicia uma espera de 30 segundos. Reiniciar com o cofre bloqueado mantém o bloqueio e exige a mesma espera. Se a energia cair antes da confirmação do novo PIN, informe o código novamente. A recuperação funciona pelo teclado, sem depender de aplicativo ou conexão de rede.
 
 ## Temporização por hardware
 
@@ -120,7 +143,7 @@ Crie um [projeto Arduino Uno no Wokwi](https://wokwi.com/projects/new/arduino-un
 
 O diagrama separa o teclado dos periféricos e usa trajetos definidos para os fios: laranja para as linhas e azul para as colunas. No menu de três pontos da simulação, escolha **Fit** para enquadrar todo o circuito; amplie para conferir os pinos.
 
-Adicione também um `chave_dispositivo.h` com uma chave exclusiva de teste, diferente da usada no cofre. Inicie a simulação e pressione **Confirmar** três vezes para ocultar a chave. Cadastre um PIN de quatro dígitos e, quando aparecer `Digite a senha`, informe o PIN escolhido para abrir. Pressione **Confirmar** novamente para fechar. É possível clicar nos botões ou usar os atalhos do teclado:
+Adicione também um `chave_dispositivo.h` com um código exclusivo de teste, diferente do usado no cofre. Inicie a simulação e pressione **Confirmar** três vezes para ocultar o código. Cadastre e confirme um PIN de quatro dígitos e, quando aparecer `Digite a senha`, informe o PIN escolhido para abrir. Pressione **Confirmar** novamente para fechar. É possível clicar nos botões ou usar os atalhos do teclado:
 
 | Botão | Atalho |
 | --- | --- |
