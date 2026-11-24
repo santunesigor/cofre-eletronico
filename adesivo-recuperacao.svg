@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64.5mm" height="16mm" viewBox="0 0 64.5 16" role="img" aria-labelledby="titulo">
+  <title id="titulo">Atenção à chave de recuperação no primeiro uso</title>
+  <rect width="64.5" height="16" fill="#fff"/>
+  <rect x=".4" y=".4" width="63.7" height="15.2" rx=".65" fill="none" stroke="#ad1d25" stroke-width=".35"/>
+  <path d="M4.65 2.05 1.8 7h5.7Z" fill="none" stroke="#ad1d25" stroke-width=".45" stroke-linejoin="round"/>
+  <path d="M4.65 3.9v1.2" stroke="#ad1d25" stroke-width=".5" stroke-linecap="round"/>
+  <circle cx="4.65" cy="6" r=".26" fill="#ad1d25"/>
+  <g font-family="DejaVu Sans, sans-serif" fill="#9c1820">
+    <text x="9" y="4.6" font-size="2.8" font-weight="700">CHAVE DE RECUPERAÇÃO</text>
+    <text x="9" y="7.5" font-size="2.25">Ao ligar, retire o lacre e anote os 16 dígitos.</text>
+    <text x="2.1" y="10.45" font-size="2.25">Guarde em local seguro para o caso de perder o PIN.</text>
+    <text x="2.1" y="13.65" font-size="2.45" font-weight="700">Após anotar, pressione CONFIRMAR 3×.</text>
+  </g>
+</svg>

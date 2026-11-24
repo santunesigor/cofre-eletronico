@@ -93,16 +93,27 @@ int main() {
   assert(OCR2A==249 && TCCR2A==_BV(WGM21) && TCCR2B==_BV(CS21));
   assert(TIMSK2==_BV(OCIE2A));
   assert(strcmp(senha,"1234")==0 && !portaAberta);
-  assert(strcmp(lcd.lines[0],"Chave 16 digitos")==0);
   assert(totalHist==1 && ultimaSeqHist==1);
-  const char *key="0123456789012345";
-  enter(key); enter("#"); assert(confirmarChave && !chaveConfigurada);
-  enter("9999999999999999#"); assert(!confirmarChave && !chaveConfigurada);
-  enter(key); enter("#"); enter(key); enter("#");
+  const char *key=CHAVE_DISPOSITIVO;
+  assert(strcmp(lcd.lines[0],key)==0);
+  assert(strcmp(lcd.lines[1],"Confirmar: 3x")==0);
+  assert(EEPROM.read(ADDR_REC_MAGIC)==REC_PENDENTE);
+  enter("1234*"); assert(confirmacoesChave==3 && !portaAberta);
+  keys=1U<<11; runMs(1000); assert(confirmacoesChave==2); release();
+  press(1U<<11); assert(confirmacoesChave==1);
+  restart(); assert(confirmacoesChave==3 && strcmp(lcd.lines[0],key)==0);
+  for (int i=0; i<3; ++i) press(1U<<11);
+  assert(EEPROM.read(ADDR_REC_MAGIC)==PIN_PENDENTE);
+  assert(strcmp(lcd.lines[0],"Defina seu PIN")==0);
+  enter("43#"); runMs(900); assert(quantidade==2 && modo==DEFINIR_INICIAL);
+  restart();
+  assert(confirmacoesChave==0 && strcmp(lcd.lines[0],"Defina seu PIN")==0);
+  enter("4321#");
+  assert(!portaAberta && strcmp(lcd.lines[0],"PIN cadastrado!")==0);
   assert(chaveConfigurada && EEPROM.read(ADDR_REC_MAGIC)==REC_MAGIC);
   assert(memcmp(chaveRec,key,16)==0);
   restart(); assert(chaveConfigurada);
-  assert(strcmp(lcd.lines[0],"Digite a senha")==0);
+  assert(strcmp(lcd.lines[0],"Digite a senha")==0 && strcmp(senha,"4321")==0);
   // Vetor oficial SipHash para mensagem de oito bytes 00..07.
   char vectorKey[16]; for (int i=0;i<16;i++) vectorKey[i]=char(i);
   assert(sipHash8(vectorKey,0x0706050403020100ULL)==0x93f5f5799a932462ULL);
@@ -134,9 +145,9 @@ int main() {
   assert(strcmp(lcd.lines[0],"Senha atual:")==0);
   enter("9999#"); wrongPassword();
   assert(modo==VALIDAR_ATUAL && erros==1);
-  enter("123#"); assert(fase==AVISO_PRESERVAR && quantidade==3);
+  enter("432#"); assert(fase==AVISO_PRESERVAR && quantidade==3);
   runMs(900); assert(fase==LIVRE && quantidade==3);
-  enter("4#"); assert(modo==DEFINIR_NOVA && quantidade==0);
+  enter("1#"); assert(modo==DEFINIR_NOVA && quantidade==0);
   assert(strcmp(lcd.lines[0],"Nova senha:")==0);
   enter("56#"); runMs(900);
   assert(modo==DEFINIR_NOVA && quantidade==2 && erros==0);
@@ -149,13 +160,13 @@ int main() {
   enter("1234#"); wrongPassword(); assert(erros==2);
   enter("1234#"); wrongPassword(); assert(bloqueado());
   assert(strcmp(lcd.lines[0],"Digite a contras")==0);
-  assert(strcmp(lcd.lines[1],"Entre em contato")==0);
+  assert(strcmp(lcd.lines[1],"Use sua chave de")==0);
   runMs(ROLAGEM_MS);
   assert(strcmp(lcd.lines[0],"igite a contrass")==0);
-  assert(strcmp(lcd.lines[1],"ntre em contato ")==0);
+  assert(strcmp(lcd.lines[1],"se sua chave de ")==0);
   runMs(CICLO_MSG_MS-2*ROLAGEM_MS);
   assert(strcmp(lcd.lines[0],"e a contrassenha")==0);
-  assert(strcmp(lcd.lines[1],"com o fabricante")==0);
+  assert(strcmp(lcd.lines[1],"e de recuperacao")==0);
   runMs(ROLAGEM_MS);
   assert(strcmp(lcd.lines[0],"ID: 000000010000")==0);
   assert(strcmp(lcd.lines[1],"Escaneie o ID   ")==0);
@@ -167,7 +178,7 @@ int main() {
   assert(strcmp(lcd.lines[1],"PIN: *")==0);
   enter("*");
   assert(strcmp(lcd.lines[0],"Digite a contras")==0);
-  assert(strcmp(lcd.lines[1],"Entre em contato")==0);
+  assert(strcmp(lcd.lines[1],"Use sua chave de")==0);
   uint32_t session=sessaoRec;
   uint32_t first=codigoRec();
   enter("0000#"); assert(!portaAberta && bloqueado());
@@ -250,6 +261,11 @@ int main() {
   EEPROM.update(ADDR_HIST+ultimoSlotHist*TAM_REG+5, EEPROM.read(ADDR_HIST+ultimoSlotHist*TAM_REG+5)^1);
   carregarHistorico(); assert(totalHist==MAX_HIST-1 && ultimaSeqHist==anteriorLog);
 
+  // Uma atualização com outro cabeçalho preserva a chave já cadastrada.
+  const char chaveAnterior[16] = {'9','8','7','6','5','4','3','2','1','0','9','8','7','6','5','4'};
+  EEPROM.put(ADDR_CHAVE, chaveAnterior);
+  restart();
+  assert(confirmacoesChave==0 && memcmp(chaveRec,chaveAnterior,16)==0);
 }
 '''
 
@@ -264,7 +280,9 @@ with tempfile.TemporaryDirectory(prefix="cofre-test-") as tmp:
     for name in ["LiquidCrystal_I2C.h", "Servo.h", "EEPROM.h"]:
         (folder / name).write_text('#include "Wire.h"\n')
     test = folder / "test.cpp"
-    test.write_text(f'#include "{ROOT / "sketch.ino"}"\n' + TESTS)
+    (folder / "chave_dispositivo.h").write_text('#define CHAVE_DISPOSITIVO "0123456789012345"\n')
+    (folder / "sketch.ino").write_bytes((ROOT / "sketch.ino").read_bytes())
+    test.write_text('#include "sketch.ino"\n' + TESTS)
     binary = folder / "test"
     subprocess.run([os.environ.get("CXX", "g++"), "-std=c++11", "-Wall", "-Wextra",
                     "-Werror", "-I", tmp, str(test), "-o", str(binary)], check=True)

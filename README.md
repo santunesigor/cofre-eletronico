@@ -2,9 +2,11 @@
 
 Protótipo didático de um cofre eletrônico com Arduino Uno, senha numérica, display LCD, servomotor e alerta sonoro. Usamos o **Wokwi** como simulador do circuito.
 
+Consulte o [guia de controles e bateria de testes](GUIA_TESTES.md) para operar e validar esta versão passo a passo.
+
 ## Funcionamento
 
-- A senha possui quatro dígitos; a senha inicial é `1234`, usada quando ainda não há senha válida salva na EEPROM.
+- A senha possui quatro dígitos. Em uma unidade nova, o usuário define o PIN no primeiro uso. Em unidades de versões anteriores, o firmware preserva o PIN existente, inclusive o padrão `1234` quando ele ainda é usado.
 - O teclado é uma matriz 4×3 construída com 12 botões individuais. O programa faz a leitura da matriz e aplica debounce de 40 ms.
 - O LCD mostra os dígitos como asteriscos. **Limpar** apaga toda a entrada e **Confirmar** valida a senha.
 - Uma senha correta aciona o servo em um sentido por 500 ms, envia o comando de parada e toca **dois bipes rápidos de confirmação** (4 kHz, 70 ms cada, com intervalo de 50 ms). O cofre permanece aberto até o usuário pressionar **Confirmar** novamente.
@@ -27,9 +29,23 @@ A memória é circular: ao lotar, o próximo evento substitui o mais antigo. Cad
 
 ## Bloqueio e contrassenha (versão em desenvolvimento)
 
-Na primeira inicialização desta versão, com o cofre fechado, configure uma chave de recuperação de **16 dígitos aleatórios**. Abra o arquivo [recuperacao.html](recuperacao.html) em um navegador local, gere a chave e guarde-a em local seguro. Digite-a no teclado do cofre, pressione Confirmar, repita e confirme. Ela fica salva na EEPROM e não deve ser enviada ao GitHub. Se o cofre estiver aberto ao atualizar, feche-o antes da configuração.
+Para preparar ou reinicializar uma unidade pelo Linux, use Python 3 e Arduino CLI com o pacote `arduino:avr` e as bibliotecas de `libraries.txt`. Informe a porta USB do Uno:
 
-Após três senhas completas incorretas consecutivas, o LCD rola as mensagens `Digite a contrassenha` e `Entre em contato com o fabricante`, alternando com a exibição estática do identificador (ID) de 12 caracteres hexadecimais por seis segundos. Ao digitar o primeiro número, a rolagem para e o LCD apresenta `Contrassenha:` e `PIN: ` seguido de asteriscos. Pressionar Limpar volta ao aviso e permite escanear novamente. O ID muda a cada minuto usando o Timer2; o Arduino não tem relógio de calendário. Informe a chave secreta e o ID atual no calculador offline. Digite a contrassenha de seis dígitos no cofre e pressione Confirmar. Uma contrassenha válida apenas libera a digitação do PIN normal, sem abrir diretamente a trava. Uma tentativa de recuperação errada exige 30 segundos de espera e gera uma nova sessão. Reiniciar não elimina o bloqueio e também exige espera antes de apresentar um novo ID. O contador de erros é zerado após autenticação normal correta ou recuperação válida.
+```bash
+scripts/gravar.sh /dev/ttyACM0
+```
+
+O script gera uma chave aleatória de 16 dígitos e compila em uma pasta temporária privada. Depois apaga e verifica toda a EEPROM, incluindo o PIN, a chave e o histórico anteriores, e grava o firmware. Se o CLI estiver fora do `PATH`, indique o executável na variável `ARDUINO_CLI`.
+
+Para uma compilação manual, execute `python3 scripts/gerar_chave.py` em uma cópia privada do projeto. O script cria `chave_dispositivo.h` na pasta do `sketch.ino`. Mantenha o cabeçalho e o binário em local privado. Em EEPROM vazia, uma compilação sem o cabeçalho exibe `Chave ausente`. A gravação manual sem limpeza da EEPROM preserva a chave já cadastrada.
+
+Cubra o LCD com o [adesivo de recuperação](adesivo-recuperacao.svg), impresso em material opaco a 100% da escala. O modelo mede 64,5 × 16 mm e cobre apenas a janela do LCD. Confira a medida da janela do seu modelo.
+
+Na primeira inicialização com o cofre fechado, o firmware salva a chave na EEPROM e a exibe no LCD. Retire o adesivo, anote os 16 dígitos em local seguro e pressione **Confirmar** três vezes separadas. A terceira pressão encerra a exibição mesmo após reiniciar. Se desligar antes dela, a chave volta a aparecer e são pedidas três pressões. O Arduino Uno não oferece armazenamento seguro para esta chave. Ela pode ser lida por quem tiver acesso à memória da placa.
+
+Em `Defina seu PIN`, escolha quatro dígitos e pressione **Confirmar** para salvar. Se desligar antes de salvar, o cofre volta à tela de cadastro do PIN. Depois de cadastrar, digite o PIN escolhido para abrir o cofre.
+
+Após três senhas completas incorretas consecutivas, o LCD rola as mensagens `Digite a contrassenha` e `Use sua chave de recuperacao`, alternando com a exibição estática do identificador (ID) de 12 caracteres hexadecimais por seis segundos. Ao digitar o primeiro número, a rolagem para e o LCD apresenta `Contrassenha:` e `PIN: ` seguido de asteriscos. Pressionar Limpar volta ao aviso e permite escanear novamente. O ID muda a cada minuto usando o Timer2; o Arduino não tem relógio de calendário. Informe a chave secreta e o ID atual no calculador offline. Digite a contrassenha de seis dígitos no cofre e pressione Confirmar. Uma contrassenha válida apenas libera a digitação do PIN normal, sem abrir diretamente a trava. Uma tentativa de recuperação errada exige 30 segundos de espera e gera uma nova sessão. Reiniciar não elimina o bloqueio e também exige espera antes de apresentar um novo ID. O contador de erros é zerado após autenticação normal correta ou recuperação válida.
 
 A função SipHash-2-4 usa a chave de 16 caracteres ASCII e a mensagem de oito bytes little-endian correspondente ao ID hexadecimal. O resultado reduzido módulo 1.000.000 produz o código de seis dígitos (incluindo zeros à esquerda). O ID combina um contador persistente de sessões e uma janela de tempo, não depende de internet nem de relógio externo. A chave deve ser gerada aleatoriamente e guardada; sem ela, a recuperação exige manutenção física do firmware/EEPROM. Configure em ambiente confiável. Este é um protótipo: a EEPROM não é protegida contra leitura ou regravação física e o código de seis dígitos não oferece segurança equivalente a um cofre certificado.
 
@@ -104,7 +120,7 @@ Crie um [projeto Arduino Uno no Wokwi](https://wokwi.com/projects/new/arduino-un
 
 O diagrama separa o teclado dos periféricos e usa trajetos definidos para os fios: laranja para as linhas e azul para as colunas. No menu de três pontos da simulação, escolha **Fit** para enquadrar todo o circuito; amplie para conferir os pinos.
 
-Inicie a simulação e digite `1234`, seguido de **Confirmar**, para abrir. Solte o botão e pressione **Confirmar** novamente para fechar. É possível clicar nos botões ou usar os atalhos do teclado:
+Adicione também um `chave_dispositivo.h` com uma chave exclusiva de teste, diferente da usada no cofre. Inicie a simulação e pressione **Confirmar** três vezes para ocultar a chave. Cadastre um PIN de quatro dígitos e, quando aparecer `Digite a senha`, informe o PIN escolhido para abrir. Pressione **Confirmar** novamente para fechar. É possível clicar nos botões ou usar os atalhos do teclado:
 
 | Botão | Atalho |
 | --- | --- |
