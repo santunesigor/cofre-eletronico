@@ -90,6 +90,117 @@ char digitado[5] = "";
 byte quantidade = 0;
 bool portaAberta = false;
 
+// Historico circular: 120 registros de 8 bytes, enderecos 32..991.
+// Nao sobrepoe PIN, estado da porta, chave ou contador de recuperacao.
+const int ADDR_HIST = 32;
+const byte MAX_HIST = 120, TAM_REG = 8, MARCA_REG = 0xA7;
+enum Evento { EV_INICIO = 1, EV_ABERTURA, EV_FECHAMENTO, EV_PIN_ERRADO,
+              EV_BLOQUEIO, EV_REC_ERRADA, EV_REC_OK, EV_SENHA_ALTERADA };
+byte totalHist = 0, ultimoSlotHist = 0, posHist = 0;
+uint32_t ultimaSeqHist = 0, ultimaAcaoHist = 0;
+bool vendoHist = false, aberturaAutenticada = false;
+
+// CRC-16/CCITT do numero sequencial e do tipo; marcador gravado por ultimo.
+uint16_t crcRegistro(uint32_t seq, byte evento) {
+  uint16_t crc = 0xffff;
+  for (byte i = 0; i < 5; ++i) {
+    byte valor = i < 4 ? byte(seq >> (8 * i)) : evento;
+    crc ^= uint16_t(valor) << 8;
+    for (byte bit = 0; bit < 8; ++bit)
+      crc = (crc & 0x8000) ? uint16_t((crc << 1) ^ 0x1021) : uint16_t(crc << 1);
+  }
+  return crc;
+}
+
+bool lerRegistro(byte slot, uint32_t &seq, byte &evento) {
+  if (slot >= MAX_HIST) return false;
+  int addr = ADDR_HIST + int(slot) * TAM_REG;
+  if (EEPROM.read(addr + 7) != MARCA_REG) return false;
+  seq = 0;
+  for (byte i = 0; i < 4; ++i) seq |= uint32_t(EEPROM.read(addr + i)) << (8 * i);
+  evento = EEPROM.read(addr + 4);
+  uint16_t crc = uint16_t(EEPROM.read(addr + 5)) | (uint16_t(EEPROM.read(addr + 6)) << 8);
+  return evento >= EV_INICIO && evento <= EV_SENHA_ALTERADA && crc == crcRegistro(seq, evento);
+}
+
+void carregarHistorico() {
+  totalHist = 0;
+  ultimaSeqHist = 0;
+  ultimoSlotHist = 0;
+  vendoHist = aberturaAutenticada = false;
+  for (byte slot = 0; slot < MAX_HIST; ++slot) {
+    uint32_t seq;
+    byte evento;
+    if (!lerRegistro(slot, seq, evento)) continue;
+    if (!totalHist || (seq != ultimaSeqHist && uint32_t(seq - ultimaSeqHist) < 0x80000000UL)) {
+      ultimaSeqHist = seq;
+      ultimoSlotHist = slot;
+    }
+    ++totalHist;
+  }
+}
+
+void registrarEvento(byte evento) {
+  byte slot = totalHist ? (ultimoSlotHist + 1) % MAX_HIST : 0;
+  uint32_t anterior;
+  byte tipoAnterior;
+  bool substitui = lerRegistro(slot, anterior, tipoAnterior);
+  uint32_t seq = ultimaSeqHist + 1;
+  int addr = ADDR_HIST + int(slot) * TAM_REG;
+  uint16_t crc = crcRegistro(seq, evento);
+  EEPROM.update(addr + 7, 0);
+  for (byte i = 0; i < 4; ++i) EEPROM.update(addr + i, byte(seq >> (8 * i)));
+  EEPROM.update(addr + 4, evento);
+  EEPROM.update(addr + 5, byte(crc));
+  EEPROM.update(addr + 6, byte(crc >> 8));
+  EEPROM.update(addr + 7, MARCA_REG);
+  ultimaSeqHist = seq;
+  ultimoSlotHist = slot;
+  if (!substitui && totalHist < MAX_HIST) ++totalHist;
+}
+
+// posicao 0 = mais recente; pula registros invalidos ou incompletos.
+bool consultarHistorico(byte pos, uint32_t &seq, byte &evento) {
+  if (pos >= totalHist) return false;
+  for (byte i = 0; i < MAX_HIST; ++i) {
+    byte slot = (int(ultimoSlotHist) + MAX_HIST - i) % MAX_HIST;
+    if (lerRegistro(slot, seq, evento)) {
+      if (pos == 0) return true;
+      --pos;
+    }
+  }
+  return false;
+}
+
+const char *nomeEvento(byte evento) {
+  switch (evento) {
+    case EV_INICIO: return "Reinicio";
+    case EV_ABERTURA: return "Cofre aberto";
+    case EV_FECHAMENTO: return "Cofre fechado";
+    case EV_PIN_ERRADO: return "Senha incorreta";
+    case EV_BLOQUEIO: return "Cofre bloqueado";
+    case EV_REC_ERRADA: return "Contra. errada";
+    case EV_REC_OK: return "Desbloqueado";
+    case EV_SENHA_ALTERADA: return "Senha alterada";
+    default: return "Desconhecido";
+  }
+}
+void mostrarHistorico() {
+  lcd.clear();
+  uint32_t seq;
+  byte evento;
+  if (!consultarHistorico(posHist, seq, evento)) {
+    lcd.print("Sem registros");
+    return;
+  }
+  char titulo[17];
+  snprintf(titulo, sizeof(titulo), "Reg. %03u/%03u", (unsigned int)(posHist + 1), (unsigned int)totalHist);
+  lcd.print(titulo);
+  lcd.setCursor(0, 1);
+  lcd.print(nomeEvento(evento));
+}
+
+
 // EEPROM: preserva os bytes da senha e do estado usados na v1.0.0.
 const byte ADDR_REC_MAGIC = 6, ADDR_ERROS = 7, ADDR_SESSAO = 8, ADDR_CHAVE = 12;
 const byte REC_MAGIC = 0xA5, MAX_ERROS = 3;
@@ -303,11 +414,13 @@ void tratarRec(char tecla) {
       for (byte i = 0; i < 6; ++i) informado = informado * 10 + (entradaRec[i] - '0');
       if (informado == codigoRec()) {
         salvarErros(0);
+        registrarEvento(EV_REC_OK);
         modo = NORMAL;
         limparRec();
         limparEntrada(); // exige o PIN original; nao abre o servo
         return;
       }
+      registrarEvento(EV_REC_ERRADA);
       esperarRecuperacao();
       return;
     }
@@ -410,6 +523,8 @@ void atualizarFase() {
       break;
     case NEUTRO_ABERTURA:
       portaAberta = true;
+      aberturaAutenticada = true;
+      registrarEvento(EV_ABERTURA);
       controlarBuzzer(true);
       iniciarFase(BEEP_1, DURACAO_BEEP_ABERTURA_MS);
       break;
@@ -433,6 +548,8 @@ void atualizarFase() {
     case NEUTRO_FECHAMENTO:
       EEPROM.update(sizeof(senha), 0);
       portaAberta = false;
+      aberturaAutenticada = vendoHist = false;
+      registrarEvento(EV_FECHAMENTO);
       lcd.clear();
       lcd.print("Cofre fechado");
       iniciarFase(AVISO_LIMPAR, 800);
@@ -470,6 +587,7 @@ void confirmarSenha() {
   if (modo == DEFINIR_NOVA) {
     strcpy(senha, digitado);
     EEPROM.put(0, senha);
+    registrarEvento(EV_SENHA_ALTERADA);
     modo = NORMAL;
     lcd.clear();
     lcd.print("Senha alterada!");
@@ -486,7 +604,9 @@ void confirmarSenha() {
     abrirPorta();
   } else {
     if (erros < MAX_ERROS) salvarErros(erros + 1);
+    registrarEvento(EV_PIN_ERRADO);
     if (bloqueado()) {
+      registrarEvento(EV_BLOQUEIO);
       modo = NORMAL;
       novaSessao();
     }
@@ -513,7 +633,25 @@ void tratarTecla(char tecla) {
     return;
   }
   if (portaAberta) {
+    if (vendoHist) {
+      if (tecla == TECLA_LIMPAR || tecla == TECLA_CONFIRMAR) {
+        vendoHist = false;
+        mostrarEntrada();
+      } else if (tecla == '2' || tecla == '8') {
+        if (tecla == '2' && posHist + 1 < totalHist) ++posHist;
+        if (tecla == '8' && posHist > 0) --posHist;
+        ultimaAcaoHist = lerTimer();
+        mostrarHistorico();
+      }
+      return;
+    }
     if (tecla == TECLA_CONFIRMAR) fecharPorta();
+    else if (tecla == '0' && aberturaAutenticada) {
+      vendoHist = true;
+      posHist = 0;
+      ultimaAcaoHist = lerTimer();
+      mostrarHistorico();
+    }
     return;
   }
 
@@ -559,6 +697,8 @@ void setup() {
   pararServo();
   lcd.init();
   lcd.backlight();
+  carregarHistorico();
+  registrarEvento(EV_INICIO);
   configurarTimer();
   linhaAtiva = 0;
   pressionadas = 0;
@@ -576,4 +716,8 @@ void loop() {
   if (tecla != '\0' && fase == LIVRE) tratarTecla(tecla);
   atualizarFase();
   atualizarTelaRec();
+  if (vendoHist && uint32_t(lerTimer() - ultimaAcaoHist) >= 30000UL * TICKS_POR_MS) {
+    vendoHist = false;
+    mostrarEntrada();
+  }
 }

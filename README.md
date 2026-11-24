@@ -8,7 +8,7 @@ Protótipo didático de um cofre eletrônico com Arduino Uno, senha numérica, d
 - O teclado é uma matriz 4×3 construída com 12 botões individuais. O programa faz a leitura da matriz e aplica debounce de 40 ms.
 - O LCD mostra os dígitos como asteriscos. **Limpar** apaga toda a entrada e **Confirmar** valida a senha.
 - Uma senha correta aciona o servo em um sentido por 500 ms, envia o comando de parada e toca **dois bipes rápidos de confirmação** (4 kHz, 70 ms cada, com intervalo de 50 ms). O cofre permanece aberto até o usuário pressionar **Confirmar** novamente.
-- Enquanto aberto, o LCD exibe `Para fechar:` na primeira linha e `Aperte Confirmar` na segunda. Os demais botões são ignorados nesse estado.
+- Enquanto aberto, o LCD exibe `Para fechar:` na primeira linha e `Aperte Confirmar` na segunda. Os demais botões são ignorados nesse estado, exceto `0` para consultar o histórico após uma abertura autenticada.
 - As mensagens normais permanecem estáticas. No bloqueio por três erros, as frases de recuperação rolam nas duas linhas do LCD.
 - Ao fechar, o servo gira no sentido contrário por 500 ms e para; o sistema fica pronto para uma nova senha.
 - Uma senha incorreta mantém o cofre fechado, exibe uma mensagem de erro e aciona o buzzer a 4.000 Hz por 1,5 segundo. Após a mensagem, a entrada é limpa para uma nova tentativa.
@@ -16,6 +16,14 @@ Protótipo didático de um cofre eletrônico com Arduino Uno, senha numérica, d
 - Ao iniciar ou reiniciar, o sistema envia apenas o comando de parada ao servo e recupera a senha e o estado aberto/fechado da EEPROM. Se desligar aberto, ao religar o LCD mostra `Para fechar:` / `Aperte Confirmar`; pressione **Confirmar** para fechar normalmente. Na primeira gravação desta versão, sem estado salvo, o programa assume fechado: alinhe a trava nessa posição antes do primeiro uso.
 - Para trocar a senha, com o cofre fechado, segure **Limpar + Confirmar juntos por 5 segundos** e solte os dois. O LCD pede `Senha atual:`; digite os quatro números atuais e pressione **Confirmar**. Em `Nova senha:`, digite exatamente quatro números e pressione **Confirmar** para salvar.
 - Durante a troca, **Limpar** apaga a entrada, dígitos além do quarto são ignorados e uma senha atual incorreta impede a alteração. A nova senha permanece salva após desligar o Arduino.
+
+## Histórico de acessos
+
+O firmware mantém os últimos **120 eventos** na EEPROM (endereços 32 a 991), incluindo inicializações, aberturas e fechamentos comandados, PIN incorreto, bloqueio, contrassenha incorreta, recuperação bem-sucedida e alteração de senha. Não armazena os dígitos informados nem a chave de recuperação no histórico. Não há data e hora de calendário porque o Uno não possui RTC; os registros são ordenados por sequência.
+
+Para consultar, abra o cofre com a senha e pressione **0** enquanto estiver aberto. O LCD mostra `Reg. 001/120` (posição do registro e total existente) e o tipo do evento. Pressione **2** para registros mais antigos, **8** para mais recentes e **Limpar** ou **Confirmar** para voltar à tela de fechamento. O histórico também sai após 30 segundos sem navegação. Após reiniciar com o cofre aberto, é necessário fechá-lo e autenticar-se novamente para consultar.
+
+A memória é circular: ao lotar, o próximo evento substitui o mais antigo. Cada registro usa número sequencial, tipo, CRC-16 e marcador de validade gravado por último. Uma gravação interrompida pode perder o registro em curso, mas não invalida os demais. Os registros sobrevivem a reinícios; sem sensores, abertura e fechamento correspondem à conclusão do comando do servo, não à confirmação física da porta. O histórico não é inviolável contra acesso físico à EEPROM.
 
 ## Bloqueio e contrassenha (versão em desenvolvimento)
 

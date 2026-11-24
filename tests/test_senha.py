@@ -47,11 +47,11 @@ struct Servo {
   void writeMicroseconds(int value) { pulse=value; }
 };
 struct EEPROMClass {
-  char data[64]; int writes=0;
+  char data[1024]; int writes=0;
   EEPROMClass() { memset(data,255,sizeof(data)); }
-  byte read(int address) { assert(address>=0 && address<64); return data[address]; }
+  byte read(int address) { assert(address>=0 && address<1024); return data[address]; }
   void update(int address, byte value) {
-    assert(address>=0 && address<64);
+    assert(address>=0 && address<1024);
     if (read(address)!=value) { data[address]=value; ++writes; }
   }
   template<class T> void get(int address, T &value) {
@@ -94,6 +94,7 @@ int main() {
   assert(TIMSK2==_BV(OCIE2A));
   assert(strcmp(senha,"1234")==0 && !portaAberta);
   assert(strcmp(lcd.lines[0],"Chave 16 digitos")==0);
+  assert(totalHist==1 && ultimaSeqHist==1);
   const char *key="0123456789012345";
   enter(key); enter("#"); assert(confirmarChave && !chaveConfigurada);
   enter("9999999999999999#"); assert(!confirmarChave && !chaveConfigurada);
@@ -196,16 +197,31 @@ int main() {
   assert(fase==BEEP_2 && buzzerLigado);
   runMs(69); assert(buzzerLigado); runMs(1);
   assert(fase==LIVRE && !buzzerLigado);
+  uint32_t seqLog; byte eventoLog;
+  assert(consultarHistorico(0,seqLog,eventoLog) && eventoLog==EV_ABERTURA);
+  assert(consultarHistorico(1,seqLog,eventoLog) && eventoLog==EV_REC_OK);
+  assert(consultarHistorico(2,seqLog,eventoLog) && eventoLog==EV_REC_ERRADA);
+  enter("0"); assert(vendoHist && posHist==0 && portaAberta);
+  assert(strcmp(lcd.lines[1],"Cofre aberto")==0);
+  enter("2"); assert(posHist==1 && strcmp(lcd.lines[1],"Desbloqueado")==0);
+  enter("8"); assert(posHist==0);
+  enter("8"); assert(posHist==0);
+  enter("*"); assert(!vendoHist && portaAberta);
+  enter("0"); runMs(30000); assert(!vendoHist && portaAberta);
+  enter("0#"); assert(!vendoHist && fase==LIVRE && portaAberta);
   stopped(); restart(); assert(portaAberta && !buzzerLigado);
   assert(strcmp(lcd.lines[0],"Para fechar:")==0);
   assert(strcmp(lcd.lines[1],"Aperte Confirmar")==0);
-  enter("9*T"); assert(portaAberta && quantidade==0 && modo==NORMAL);
+  enter("90*T"); assert(portaAberta && quantidade==0 && modo==NORMAL && !vendoHist);
+  assert(consultarHistorico(0,seqLog,eventoLog) && eventoLog==EV_INICIO);
+  assert(consultarHistorico(1,seqLog,eventoLog) && eventoLog==EV_ABERTURA);
   enter("#"); assert(fase==FECHANDO && trava.pulse==SERVO_FECHAR_US);
   runMs(499); assert(trava.pulse==SERVO_FECHAR_US);
   runMs(1); stopped(); assert(fase==NEUTRO_FECHAMENTO);
   runMs(99); assert(EEPROM.read(sizeof(senha))==1);
   runMs(1); assert(!portaAberta && EEPROM.read(sizeof(senha))==0);
   assert(!buzzerLigado && fase==AVISO_LIMPAR);
+  assert(consultarHistorico(0,seqLog,eventoLog) && eventoLog==EV_FECHAMENTO);
   runMs(800); assert(fase==LIVRE);
   restart(); assert(!portaAberta && strcmp(senha,"0000")==0);
   enter("#"); runMs(900); stopped();
@@ -215,6 +231,25 @@ int main() {
   restart(); assert(portaAberta);
   memcpy(EEPROM.data,"12x4",5); restart(); assert(strcmp(senha,"1234")==0);
   memcpy(EEPROM.data,"12345",5); restart(); assert(strcmp(senha,"1234")==0);
+  char dadosSeguranca[32]; memcpy(dadosSeguranca,EEPROM.data,32);
+  for (int i=0;i<MAX_HIST+5;++i) registrarEvento(EV_PIN_ERRADO);
+  assert(totalHist==MAX_HIST);
+  assert(consultarHistorico(0,seqLog,eventoLog) && seqLog==ultimaSeqHist);
+  assert(consultarHistorico(MAX_HIST-1,seqLog,eventoLog) && seqLog==ultimaSeqHist-MAX_HIST+1);
+  assert(!consultarHistorico(MAX_HIST,seqLog,eventoLog));
+  assert(memcmp(dadosSeguranca,EEPROM.data,32)==0);
+  uint32_t anteriorLog=ultimaSeqHist;
+  carregarHistorico(); assert(totalHist==MAX_HIST && ultimaSeqHist==anteriorLog);
+  // Uma escrita interrompida perde somente o slot em gravacao.
+  byte proximo=(ultimoSlotHist+1)%MAX_HIST;
+  EEPROM.update(ADDR_HIST+proximo*TAM_REG+7,0);
+  carregarHistorico(); assert(totalHist==MAX_HIST-1 && ultimaSeqHist==anteriorLog);
+  registrarEvento(EV_BLOQUEIO);
+  assert(totalHist==MAX_HIST && ultimaSeqHist==anteriorLog+1);
+  assert(consultarHistorico(0,seqLog,eventoLog) && eventoLog==EV_BLOQUEIO);
+  EEPROM.update(ADDR_HIST+ultimoSlotHist*TAM_REG+5, EEPROM.read(ADDR_HIST+ultimoSlotHist*TAM_REG+5)^1);
+  carregarHistorico(); assert(totalHist==MAX_HIST-1 && ultimaSeqHist==anteriorLog);
+
 }
 '''
 
@@ -234,4 +269,4 @@ with tempfile.TemporaryDirectory(prefix="cofre-test-") as tmp:
     subprocess.run([os.environ.get("CXX", "g++"), "-std=c++11", "-Wall", "-Wextra",
                     "-Werror", "-I", tmp, str(test), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-print("OK: Timer2, teclado, senha, EEPROM, servo, bipes, SipHash e recuperação.")
+print("OK: Timer2, teclado, senha, EEPROM, servo, bipes, SipHash, recuperação e histórico circular persistente.")
