@@ -11,7 +11,7 @@
 <button id="stop" type="button" hidden>Fechar câmera</button>
 <label id="photoLabel" for="photo">Ler uma foto do LCD</label>
 <input id="photo" type="file" accept="image/*" capture="environment" hidden>
-<p id="status" class="status" role="status" aria-live="polite">Aponte para a linha ID do LCD. A leitura é feita no dispositivo.</p>
+<p id="status" class="status" role="status" aria-live="polite">Aguarde a tela ID: entre os avisos e aponte para a primeira linha do LCD. A leitura é feita no dispositivo.</p>
 </section>
 <label for="id">ID mostrado no LCD (12 caracteres)</label><input id="id" maxlength="12" autocapitalize="characters" autocomplete="off">
 <button id="calc" type="button">Calcular contrassenha</button>
@@ -139,7 +139,7 @@ async function iniciarCamera(){
       const id=extrairId(data.text);
       if(id&&id===anterior)acertos++;else{anterior=id;acertos=id?1:0;}
       if(acertos>=2){encerrar();aceitar(id);return;}
-      status(id?"Confirmando leitura: "+id:"Alinhe ID: e os 12 caracteres na moldura, sem reflexos.");
+      status(id?"Confirmando leitura: "+id:"Aguarde a tela ID: e alinhe os 12 caracteres na moldura, sem reflexos.");
       await pausa(300);
     }
   }catch(e){if(token===geracao){encerrar();status("Não foi possível escanear: "+e.message);}}

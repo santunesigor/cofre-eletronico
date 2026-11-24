@@ -101,6 +101,13 @@ char entradaRec[17] = "";
 byte qtdRec = 0;
 uint32_t sessaoRec = 0, inicioJanela = 0;
 uint16_t janelaRec = 0;
+const uint32_t ROLAGEM_MS = 400UL, EXIBIR_ID_MS = 6000UL;
+const char MSG_REC_1[] = "Digite a contrassenha";
+const char MSG_REC_2[] = "Entre em contato com o fabricante";
+const byte ULTIMO_PASSO_REC = sizeof(MSG_REC_2) - 1 - 16;
+const uint32_t CICLO_MSG_MS = (ULTIMO_PASSO_REC + 1) * ROLAGEM_MS;
+uint32_t inicioTelaRec = 0;
+int8_t ultimoQuadroRec = -1;
 
 // SipHash-2-4, chave de 128 bits, mensagem de oito bytes little-endian.
 // A chave de recuperacao e escolhida pelo proprietario, nunca pelo repositorio.
@@ -173,6 +180,39 @@ void iniciarFase(Fase nova, uint32_t duracaoMs) {
   duracaoFase = duracaoMs * TICKS_POR_MS;
 }
 
+// Escreve uma janela de 16 caracteres; frases menores param no final.
+void mostrarLinhaRolante(byte linha, const char *msg, byte passo) {
+  byte tamanho = strlen(msg);
+  byte maximo = tamanho > 16 ? tamanho - 16 : 0;
+  byte deslocamento = passo < maximo ? passo : maximo;
+  lcd.setCursor(0, linha);
+  for (byte i = 0; i < 16; ++i) {
+    byte pos = deslocamento + i;
+    lcd.print(pos < tamanho ? msg[pos] : ' ');
+  }
+}
+
+// Alterna o aviso rolante com um ID estatico, legivel pelo scanner.
+void atualizarTelaRec() {
+  if (!bloqueado() || portaAberta || fase != LIVRE || qtdRec != 0) return;
+  uint32_t decorrido = uint32_t(lerTimer() - inicioTelaRec) / TICKS_POR_MS;
+  uint32_t pos = decorrido % (CICLO_MSG_MS + EXIBIR_ID_MS);
+  int8_t quadro = pos < CICLO_MSG_MS ? int8_t(pos / ROLAGEM_MS) : -2;
+  if (quadro == ultimoQuadroRec) return;
+  ultimoQuadroRec = quadro;
+  if (quadro == -2) {
+    char id[17];
+    snprintf(id, sizeof(id), "ID: %08lX%04X", (unsigned long)sessaoRec, (unsigned int)janelaRec);
+    lcd.setCursor(0, 0);
+    lcd.print(id);
+    lcd.setCursor(0, 1);
+    lcd.print("Escaneie o ID   ");
+  } else {
+    mostrarLinhaRolante(0, MSG_REC_1, byte(quadro));
+    mostrarLinhaRolante(1, MSG_REC_2, byte(quadro));
+  }
+}
+
 void mostrarEntrada() {
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -187,11 +227,15 @@ void mostrarEntrada() {
       lcd.print(confirmarChave ? "Repita a chave" : "Chave 16 digitos");
       lcd.setCursor(0, 1);
     } else {
-      char id[17];
-      snprintf(id, sizeof(id), "ID: %08lX%04X", (unsigned long)sessaoRec, (unsigned int)janelaRec);
-      lcd.print(id);
+      if (qtdRec == 0) {
+        inicioTelaRec = lerTimer();
+        ultimoQuadroRec = -1;
+        atualizarTelaRec();
+        return;
+      }
+      lcd.print("Contrassenha:");
       lcd.setCursor(0, 1);
-      lcd.print("Codigo: ");
+      lcd.print("PIN: ");
     }
     for (byte i = 0; i < qtdRec; ++i) lcd.print('*');
     return;
@@ -531,4 +575,5 @@ void loop() {
   char tecla = lerPressionamento();
   if (tecla != '\0' && fase == LIVRE) tratarTecla(tecla);
   atualizarFase();
+  atualizarTelaRec();
 }
