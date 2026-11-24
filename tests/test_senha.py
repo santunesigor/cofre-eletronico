@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+SKETCH = ROOT / "CofreEletronico" / "CofreEletronico.ino"
 # Substitutos das APIs do Uno para executar o sketch no computador.
 STUBS = r'''
 #pragma once
@@ -20,6 +21,9 @@ const int LOW=0, HIGH=1, INPUT=0, OUTPUT=1, INPUT_PULLUP=2, A2=16;
 #define ATOMIC_BLOCK(type) for (bool atomicOnce=true; atomicOnce; atomicOnce=false)
 const int PC2=2, WGM21=1, OCF2A=1, OCIE2A=1, CS21=1;
 uint8_t TCCR2A=0,TCCR2B=0,TCNT2=0,OCR2A=0,TIFR2=0,TIMSK2=0,PINC=0,PORTC=0;
+const int WDIE=6, WDIF=7;
+uint8_t WDTCSR=0;
+void wdt_disable() { WDTCSR=0; }
 unsigned int keys=0;
 int activeRow=-1;
 // O simulador responde LOW só na coluna da linha selecionada.
@@ -81,10 +85,23 @@ void enter(const char *text) { while (*text) tratarTecla(*text++); }
 void release() { keys=0; runMs(50); }
 void press(unsigned int mask) { keys=mask; runMs(50); release(); }
 void stopped() { assert(trava.enabled && trava.pulse==SERVO_PARADO_US); }
+void amostrarWatchdog(byte bit) {
+  TCNT2=bit;
+  WDT_vect();
+  loop();
+}
+void simularDigito(byte valor) {
+  for (int i=3; i>=0; --i) {
+    byte bit=(valor>>i)&1;
+    amostrarWatchdog(bit);
+    amostrarWatchdog(1-bit);
+  }
+}
 void restart() {
   // Recrie a partida e preserve a EEPROM simulada.
   strcpy(senha,"1234"); modo=NORMAL; quantidade=0; digitado[0]=0;
-  keys=0; setup(); runMs(100); assert(fase==LIVRE || fase==ESPERA_REC); stopped();
+  keys=0; setup(); runMs(100);
+  assert(fase==LIVRE || fase==ESPERA_REC || fase==GERANDO_CODIGO); stopped();
 }
 void wrongPassword() {
   assert(fase==ERRO_SONORO && buzzerLigado && !portaAberta);
@@ -103,7 +120,15 @@ int main() {
   assert(TIMSK2==_BV(OCIE2A));
   assert(strcmp(senha,"1234")==0 && !portaAberta);
   assert(totalHist==1 && ultimaSeqHist==1);
-  const char *key=CHAVE_DISPOSITIVO;
+  assert(fase==GERANDO_CODIGO && WDTCSR&_BV(WDIE));
+  assert(strcmp(lcd.lines[0],"Gerando codigo")==0 && EEPROM.read(ADDR_REC_MAGIC)==255);
+  // Pares iguais e valores acima de 9 não produzem dígitos.
+  amostrarWatchdog(0); amostrarWatchdog(0);
+  simularDigito(15);
+  assert(digitosGerados==0 && EEPROM.read(ADDR_REC_MAGIC)==255);
+  const char *key="0123456789012345";
+  for (const char *d=key; *d; ++d) simularDigito(*d-'0');
+  assert(fase==LIVRE && WDTCSR==0);
   assert(strcmp(lcd.lines[0],key)==0);
   assert(strcmp(lcd.lines[1],"Confirmar: 3x")==0);
   assert(EEPROM.read(ADDR_REC_MAGIC)==REC_PENDENTE);
@@ -271,31 +296,44 @@ int main() {
   EEPROM.update(ADDR_HIST+ultimoSlotHist*TAM_REG+5, EEPROM.read(ADDR_HIST+ultimoSlotHist*TAM_REG+5)^1);
   carregarHistorico(); assert(totalHist==MAX_HIST-1 && ultimaSeqHist==anteriorLog);
 
-  // Uma atualização com outro cabeçalho preserva a chave já cadastrada.
+  // Um reinício normal preserva até códigos armazenados por uma versão anterior.
   const char chaveAnterior[16] = {'9','8','7','6','5','4','3','2','1','0','9','8','7','6','5','4'};
   EEPROM.put(ADDR_CHAVE, chaveAnterior);
   restart();
-  assert(confirmacoesChave==0 && memcmp(codigoRec,chaveAnterior,16)==0);
+  assert(WDTCSR==0 && confirmacoesChave==0 && memcmp(codigoRec,chaveAnterior,16)==0);
+
+  // EEPROM vazia: sem amostras ou com todos os dígitos iguais, não salve código.
+  memset(EEPROM.data,255,sizeof(EEPROM.data));
+  restart();
+  runMs(TEMPO_GERACAO_MS);
+  assert(WDTCSR==0 && EEPROM.read(ADDR_REC_MAGIC)==255);
+  assert(strcmp(lcd.lines[0],"Falha na geracao")==0);
+  enter("#");
+  for (int n=0; n<16; ++n) simularDigito(5);
+  assert(WDTCSR==0 && !chaveConfigurada && EEPROM.read(ADDR_REC_MAGIC)==255);
+  enter("#");
+  for (int n=0; n<16; ++n) simularDigito(n%2 ? 7 : 5);
+  assert(WDTCSR==0 && EEPROM.read(ADDR_REC_MAGIC)==REC_PENDENTE);
+  assert(strcmp(lcd.lines[0],"5757575757575757")==0);
 }
 '''
 
 with tempfile.TemporaryDirectory(prefix="cofre-test-") as tmp:
-    # Monte um sketch isolado com código de demonstração e bibliotecas simuladas.
+    # Compile uma cópia isolada com as bibliotecas simuladas.
     folder = Path(tmp)
     (folder / "Wire.h").write_text(STUBS)
-    for directory, header in [("avr", "interrupt.h"), ("util", "atomic.h")]:
-        (folder / directory).mkdir()
+    for directory, header in [("avr", "interrupt.h"), ("avr", "wdt.h"), ("util", "atomic.h")]:
+        (folder / directory).mkdir(exist_ok=True)
         (folder / directory / header).write_text('#include "Wire.h"\n')
     import re
-    assert not re.search(r"\b(?:delay|delayMicroseconds|millis|micros|tone|noTone)\s*\(", (ROOT / "sketch.ino").read_text())
+    assert not re.search(r"\b(?:delay|delayMicroseconds|millis|micros|tone|noTone)\s*\(", SKETCH.read_text())
     for name in ["LiquidCrystal_I2C.h", "Servo.h", "EEPROM.h"]:
         (folder / name).write_text('#include "Wire.h"\n')
     test = folder / "test.cpp"
-    (folder / "chave_dispositivo.h").write_text('#define CHAVE_DISPOSITIVO "0123456789012345"\n')
-    (folder / "sketch.ino").write_bytes((ROOT / "sketch.ino").read_bytes())
-    test.write_text('#include "sketch.ino"\n' + TESTS)
+    (folder / SKETCH.name).write_bytes(SKETCH.read_bytes())
+    test.write_text(f'#include "{SKETCH.name}"\n' + TESTS)
     binary = folder / "test"
     subprocess.run([os.environ.get("CXX", "g++"), "-std=c++11", "-Wall", "-Wextra",
                     "-Werror", "-I", tmp, str(test), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-print("OK: Timer2, teclado, senha, EEPROM, servo, bipes, recuperação e confirmação de PIN e histórico circular persistente.")
+print("OK: geração do código, Timer2, teclado, PIN, EEPROM, servo, bipes, recuperação e histórico.")

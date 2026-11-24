@@ -1,4 +1,3 @@
-# O cabeçalho gerado contém o código privado de uma unidade.
+# Protege arquivos privados que possam ter ficado de versões anteriores.
 chave_dispositivo.h
 __pycache__/
-/.venv/

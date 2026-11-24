@@ -4,42 +4,33 @@ Protótipo didático de um cofre eletrônico com Arduino Uno, senha numérica, d
 
 Consulte o [roteiro de apresentação](APRESENTACAO.md) para demonstrar o projeto e o [guia de controles e testes](GUIA_TESTES.md) para ensaiar cada função.
 
-## Como gravar no Arduino
+## Como compilar e gravar na Arduino IDE
 
-O gravador foi preparado para Linux, macOS e Windows com um **Arduino Uno R3 ou compatível com ATmega328P**. Depois da [instalação inicial](#instalação-inicial), conecte a placa por USB, feche o Monitor Serial e rode na pasta do projeto:
+Este projeto usa **Arduino Uno R3 ou compatível com ATmega328P**. Os dois sketches estão no repositório e podem ser abertos diretamente na IDE.
 
-| Sistema | Gravar com detecção automática | Listar portas sem gravar |
-| --- | --- | --- |
-| Linux ou macOS | `./scripts/gravar.sh` | `./scripts/gravar.sh --portas` |
-| Windows | `py -3 scripts/gravar.py` | `py -3 scripts/gravar.py --portas` |
+| Arquivo | Quando abrir |
+| --- | --- |
+| [CofreEletronico.ino](CofreEletronico/CofreEletronico.ino) | Para compilar e gravar o programa do cofre. |
+| [LimparEEPROM.ino](LimparEEPROM/LimparEEPROM.ino) | Só quando quiser apagar os dados e simular o primeiro uso. |
 
-Se houver exatamente um Uno reconhecido, o gravador seleciona a porta. Se houver mais de um ou se seu clone não for reconhecido, liste as portas e passe a correta no comando. Exemplos: `./scripts/gravar.sh /dev/ttyACM1` no Linux, `./scripts/gravar.sh /dev/cu.usbmodem1101` no macOS ou `py -3 scripts/gravar.py COM3` no Windows. Use a porta que aparecer no seu computador.
+1. Instale a [Arduino IDE](https://www.arduino.cc/en/software). No **Gerenciador de Placas**, instale **Arduino AVR Boards**. No **Gerenciador de Bibliotecas**, instale **Servo** e **LiquidCrystal I2C**.
+2. Conecte o Uno por um cabo USB de dados. Selecione **Ferramentas → Placa → Arduino AVR Boards → Arduino Uno**. Em **Ferramentas → Porta**, selecione a porta que aparece ao conectar a placa. O nome muda conforme o computador.
+3. Abra `CofreEletronico/CofreEletronico.ino`. Clique em **Verificar (✓)** para só compilar ou em **Carregar (→)** para compilar e gravar. O carregamento normal mantém os dados existentes na EEPROM.
 
-**Cada gravação apaga o PIN, o código de recuperação e o histórico.** Aguarde a mensagem `EEPROM limpa e firmware gravado e verificado.` Depois anote os 16 dígitos do LCD, pressione **Confirmar** três vezes e digite o novo PIN duas vezes para salvá-lo.
+### Começar do zero pela IDE
 
-Se a porta não aparecer, confira o cabo USB de dados e feche o Monitor Serial. Para resolver erro de permissão no Linux, consulte o [roteiro de apresentação](APRESENTACAO.md#regravar-por-conta-própria).
+**Este procedimento apaga o PIN, o código de recuperação e o histórico.** Use-o para repetir o primeiro uso ou começar uma demonstração com o cofre vazio.
 
-### Instalação inicial
-
-Instale estas ferramentas uma vez em cada computador antes de gravar.
-
-1. Instale o Python 3 e o [Arduino CLI](https://docs.arduino.cc/arduino-cli/installation). O comando `arduino-cli version` deve funcionar no terminal.
-2. Na raiz do projeto, instale o pySerial com `python3 -m pip install -r requirements.txt` no Linux/macOS ou `py -3 -m pip install -r requirements.txt` no Windows. Se o Linux/macOS bloquear instalações no Python do sistema, rode `python3 -m venv .venv`, depois `. .venv/bin/activate` e repita a instalação. Se o pySerial já estiver instalado, pule esta etapa.
-3. Instale o suporte ao Uno e as bibliotecas:
-
-```bash
-arduino-cli core update-index
-arduino-cli core install arduino:avr
-arduino-cli lib install Servo "LiquidCrystal I2C"
-```
-
-Se o CLI estiver fora do `PATH`, indique o caminho do executável na variável `ARDUINO_CLI`.
+1. Abra `LimparEEPROM/LimparEEPROM.ino` e clique em **Carregar (→)**.
+2. Abra o **Monitor Serial**, selecione **115200 baud**, digite `?` e envie. Aguarde `EEPROM bytes FF: 1024/1024`. Essa resposta confirma que cada byte foi apagado.
+3. Feche o Monitor Serial. Abra `CofreEletronico/CofreEletronico.ino` e clique em **Carregar (→)** novamente. O programa de limpeza é temporário e precisa ser substituído pelo programa do cofre.
+4. No LCD, aguarde `Gerando codigo`. Anote os 16 dígitos exibidos e pressione **Confirmar** três vezes. Escolha um PIN de quatro dígitos e digite-o novamente para confirmar.
 
 ### Por que fizemos assim
 
-- **Para levar o projeto a outro computador.** A mesma placa pode aparecer como `COM3` no Windows e `/dev/ttyACM1` no Linux. O Python e o pySerial permitem usar o mesmo gravador nos três sistemas. Quando há um único Uno reconhecido, o script escolhe a porta. Se houver dúvida, cabe ao operador indicar qual placa quer gravar.
-- **Para demonstrar o primeiro uso de forma previsível.** Apagar a EEPROM remove o PIN, o código de recuperação e o histórico usados em ensaios anteriores. O script sorteia um novo código e usa um arquivo temporário privado durante a compilação. Assim, o código da unidade não precisa ficar no repositório.
-- **Para conferir as duas etapas da gravação.** O script compila tudo antes de alterar a placa. Depois, o programa auxiliar verifica os 1.024 bytes da EEPROM e o Arduino CLI confere o firmware gravado na flash. São duas verificações porque a EEPROM guarda os dados do cofre e a flash guarda o programa.
+- A IDE permite compilar e gravar em outro computador sem preparar scripts ou depender do nome que o sistema deu à porta USB.
+- A flash guarda o programa. A EEPROM guarda o PIN, o código e o histórico. Por isso a atualização normal preserva os dados e a limpeza é uma etapa separada.
+- Quando a EEPROM está vazia, o Uno gera o código no primeiro boot. O firmware compara o Timer2 com o oscilador independente do watchdog e aproveita a variação entre os relógios. Se a coleta não render um código em 30 segundos, o LCD mostra `Falha na geracao`. Pressione **Confirmar** para tentar novamente no circuito físico. Este é um gerador didático, sem garantia criptográfica. [Datasheet do ATmega328P](https://www.microchip.com/content/dam/mchp/documents/MCU08/ProductDocuments/DataSheets/ATmega48A-PA-88A-PA-168A-PA-328-P-DS-DS40002061B.pdf)
 
 ## Funcionamento
 
@@ -66,13 +57,9 @@ A memória é circular: ao lotar, o próximo evento substitui o mais antigo. Cad
 
 ## Bloqueio e código de recuperação
 
-### Compilação manual
-
-Para uma compilação manual, execute `python3 scripts/gerar_chave.py` em uma cópia privada do projeto. O script cria `chave_dispositivo.h` na pasta do `sketch.ino`. Mantenha o cabeçalho e o binário em local privado. Em EEPROM vazia, uma compilação sem o cabeçalho exibe `Codigo ausente`. A gravação manual sem limpeza da EEPROM preserva o código já cadastrado.
-
 Cubra o LCD com o [adesivo de recuperação](adesivo-recuperacao.svg), impresso em material opaco a 100% da escala. O modelo mede 64,5 × 16 mm e cobre apenas a janela do LCD. Confira a medida da janela do seu modelo.
 
-Na primeira inicialização com o cofre fechado, o firmware salva o código na EEPROM e o exibe no LCD. Retire o adesivo, anote os 16 dígitos em local seguro e pressione **Confirmar** três vezes separadas. A terceira pressão encerra a exibição mesmo após reiniciar. Se desligar antes dela, o código volta a aparecer e são pedidas três pressões. O Arduino Uno não oferece armazenamento seguro para esse código. Ele pode ser lido por quem tiver acesso à memória da placa.
+Na primeira inicialização com o cofre fechado, o firmware gera e salva o código na EEPROM se ainda não houver um. Retire o adesivo, anote os 16 dígitos em local seguro e pressione **Confirmar** três vezes separadas. A terceira pressão encerra a exibição mesmo após reiniciar. Se desligar antes dela, o código volta a aparecer e são pedidas três pressões. O Arduino Uno não oferece armazenamento seguro para esse código. Ele pode ser lido por quem tiver acesso à memória da placa.
 
 Em `Defina seu PIN`, escolha quatro dígitos e pressione **Confirmar**. Em `Confirme seu PIN`, digite o mesmo PIN e confirme. Se os PINs divergirem, escolha e confirme novamente. Se desligar antes de salvar, o cofre volta à tela de cadastro com o código oculto.
 
@@ -90,7 +77,7 @@ O Timer2 fica reservado ao firmware: não use simultaneamente bibliotecas que o 
 
 ## Ajuste do servo físico
 
-Esta versão foi adaptada ao servo que está dando voltas completas. A abertura e o fechamento usam tempo, sem medir o ângulo. No `sketch.ino`:
+Esta versão foi adaptada ao servo que está dando voltas completas. A abertura e o fechamento usam tempo, sem medir o ângulo. No `CofreEletronico/CofreEletronico.ino`:
 
 - `SERVO_PARADO_US = 1500`: pulso de parada inicial; ajuste em pequenos passos se o servo ainda se mover durante esse comando.
 - `SERVO_ABRIR_US = 1600` e `SERVO_FECHAR_US = 1400`: comandos em sentidos contrários; troque os valores entre si se o mecanismo estiver invertido.
@@ -127,7 +114,7 @@ O LCD I2C dispensa o potenciômetro e o resistor externos do circuito paralelo: 
 
 O display usa apenas **GND, VCC, SDA e SCL**. Os pinos D10–D13 e A0–A1 ficam livres. Cada botão conecta uma linha a uma coluna quando pressionado. As colunas usam `INPUT_PULLUP`, dispensando resistores externos para o teclado. No Wokwi, os contatos usados são `1.l` e `2.l`.
 
-**Endereço I2C:** a simulação utiliza `0x27`, definido em `ENDERECO_LCD` no `sketch.ino` e no atributo `i2cAddress` do `diagram.json`. Se o seu módulo físico tiver outro endereço (por exemplo `0x3F`), identifique-o com um scanner I2C e ajuste `ENDERECO_LCD` antes de gravar o Arduino. Se a tela acender mas os caracteres não aparecerem, confira o endereço e ajuste o trimpot de contraste na placa I2C.
+**Endereço I2C:** a simulação utiliza `0x27`, definido em `ENDERECO_LCD` no sketch principal e no atributo `i2cAddress` do `diagram.json`. Se o seu módulo físico tiver outro endereço (por exemplo `0x3F`), identifique-o com um scanner I2C e ajuste `ENDERECO_LCD` antes de gravar o Arduino. Se a tela acender mas os caracteres não aparecerem, confira o endereço e ajuste o trimpot de contraste na placa I2C.
 
 Para o circuito físico, use alimentação 5 V adequada ao servo e GND comum; dependendo da carga do mecanismo, pode ser necessária uma fonte separada para o servo (com terra compartilhado).
 
@@ -137,13 +124,15 @@ Crie um [projeto Arduino Uno no Wokwi](https://wokwi.com/projects/new/arduino-un
 
 | Arquivo | Conteúdo |
 | --- | --- |
-| `sketch.ino` | Programa do cofre |
+| `CofreEletronico/CofreEletronico.ino` | Copie o conteúdo para o `sketch.ino` do Wokwi. |
 | `diagram.json` | Componentes e ligações |
 | `libraries.txt` | Bibliotecas Servo e LiquidCrystal I2C |
 
 O diagrama separa o teclado dos periféricos e usa trajetos definidos para os fios: laranja para as linhas e azul para as colunas. No menu de três pontos da simulação, escolha **Fit** para enquadrar todo o circuito; amplie para conferir os pinos.
 
-Adicione também um `chave_dispositivo.h` com um código exclusivo de teste, diferente do usado no cofre. Inicie a simulação e pressione **Confirmar** três vezes para ocultar o código. Cadastre e confirme um PIN de quatro dígitos e, quando aparecer `Digite a senha`, informe o PIN escolhido para abrir. Pressione **Confirmar** novamente para fechar. É possível clicar nos botões ou usar os atalhos do teclado:
+A geração do código depende da variação entre dois relógios no Uno físico. Use o Wokwi para conferir o circuito e a pinagem. Se o simulador não fornecer essa variação, ele pode parar em `Falha na geracao`. Para testar o fluxo completo, use o Uno físico ou execute `python3 tests/test_senha.py`, que injeta amostras durante o teste.
+
+É possível clicar nos botões ou usar os atalhos do teclado:
 
 | Botão | Atalho |
 | --- | --- |

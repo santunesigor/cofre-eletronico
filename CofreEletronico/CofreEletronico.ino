@@ -13,12 +13,9 @@
 #include <EEPROM.h>
 #include <string.h>
 
-// O gravador fornece este cabeçalho privado; o repositório não inclui o código.
-#if __has_include("chave_dispositivo.h")
-#include "chave_dispositivo.h"
-#endif
 #include <stdio.h>
 #include <avr/interrupt.h>
+#include <avr/wdt.h>
 #include <util/atomic.h>
 
 // LCD 16x2 I2C: SDA=A4, SCL=A5 no Arduino Uno.
@@ -250,18 +247,6 @@ void salvarErros(byte valor) {
 void carregarChave() {
   byte estado = EEPROM.read(ADDR_REC_MAGIC);
   chaveConfigurada = estado == REC_MAGIC || estado == REC_PENDENTE || estado == PIN_PENDENTE;
-#ifdef CHAVE_DISPOSITIVO
-  if (!chaveConfigurada) {
-    static_assert(sizeof(CHAVE_DISPOSITIVO) == TAM_CODIGO_REC + 1, "Codigo deve ter 16 digitos");
-    memcpy(codigoRec, CHAVE_DISPOSITIVO, sizeof(codigoRec));
-    EEPROM.put(ADDR_CHAVE, codigoRec);
-    salvarErros(0);
-    // Grave o marcador por último para poder repetir se a energia cair.
-    EEPROM.update(ADDR_REC_MAGIC, REC_PENDENTE);
-    estado = REC_PENDENTE;
-    chaveConfigurada = true;
-  }
-#endif
   confirmacoesChave = estado == REC_PENDENTE ? 3 : 0;
   // Se o usuário ocultou o código antes de escolher o PIN, retome direto no cadastro.
   if (estado == PIN_PENDENTE) modo = DEFINIR_INICIAL;
@@ -290,7 +275,7 @@ uint32_t inicioLinha = 0;
 unsigned int pressionadas = 0;
 char teclaLida = '\0';
 
-enum Fase { LIVRE, INICIANDO, ABRINDO, NEUTRO_ABERTURA, BEEP_1,
+enum Fase { LIVRE, INICIANDO, GERANDO_CODIGO, ABRINDO, NEUTRO_ABERTURA, BEEP_1,
             INTERVALO_BEEPS, BEEP_2, FECHANDO, NEUTRO_FECHAMENTO,
             AVISO_LIMPAR, AVISO_PRESERVAR, ERRO_SONORO, ERRO_SILENCIOSO, ESPERA_REC };
 Fase fase = LIVRE;
@@ -316,7 +301,9 @@ void mostrarEntrada() {
     return;
   }
   if (!chaveConfigurada) {
-    lcd.print("Codigo ausente");
+    lcd.print("Falha na geracao");
+    lcd.setCursor(0, 1);
+    lcd.print("Tente: Confirmar");
     return;
   }
   if (solicitandoCodigo()) {
@@ -344,6 +331,76 @@ void mostrarEntrada() {
   for (byte i = 0; i < quantidade; i++) {
     lcd.print('*');
   }
+}
+
+// O watchdog tem um oscilador próprio. Leia o bit baixo do Timer2, que usa
+// outro relógio, para aproveitar a variação de fase entre os dois.
+volatile byte amostraWatchdog = 0;
+volatile bool novaAmostraWatchdog = false;
+ISR(WDT_vect) {
+  amostraWatchdog = TCNT2 & 1;
+  novaAmostraWatchdog = true;
+}
+
+const uint32_t TEMPO_GERACAO_MS = 30000UL;
+const byte SEM_AMOSTRA = 2;
+byte primeiraAmostra = SEM_AMOSTRA;
+byte digitosGerados = 0, bitsColetados = 0, valorColetado = 0;
+bool digitosDiferentes = false;
+
+void iniciarGeracaoCodigo() {
+  lcd.clear();
+  lcd.print("Gerando codigo");
+  primeiraAmostra = SEM_AMOSTRA;
+  digitosGerados = bitsColetados = valorColetado = 0;
+  digitosDiferentes = false;
+  novaAmostraWatchdog = false;
+  iniciarFase(GERANDO_CODIGO, TEMPO_GERACAO_MS);
+  // A configuração padrão de wdt_disable deixa o prescaler em zero.
+  // Ative só a interrupção (cerca de 16 ms), sem habilitar reset automático.
+  WDTCSR = _BV(WDIE) | _BV(WDIF);
+}
+
+void atualizarGeracaoCodigo() {
+  if (fase != GERANDO_CODIGO) return;
+  byte amostra = SEM_AMOSTRA;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    if (novaAmostraWatchdog) {
+      amostra = amostraWatchdog;
+      novaAmostraWatchdog = false;
+    }
+  }
+  if (amostra == SEM_AMOSTRA) return;
+  if (primeiraAmostra == SEM_AMOSTRA) {
+    primeiraAmostra = amostra;
+    return;
+  }
+  // Filtro de Von Neumann: descarte 00 e 11. Os pares 01 e 10 viram 0 e 1.
+  byte bit = primeiraAmostra;
+  primeiraAmostra = SEM_AMOSTRA;
+  if (bit == amostra) return;
+  valorColetado = (valorColetado << 1) | bit;
+  if (++bitsColetados < 4) return;
+  // Use 0 a 9 e descarte 10 a 15 para não favorecer alguns dígitos.
+  byte digito = valorColetado;
+  bitsColetados = valorColetado = 0;
+  if (digito >= 10) return;
+  char numero = '0' + digito;
+  if (digitosGerados != 0 && numero != codigoRec[0]) digitosDiferentes = true;
+  codigoRec[digitosGerados++] = numero;
+  if (digitosGerados < TAM_CODIGO_REC) return;
+
+  wdt_disable();
+  fase = LIVRE;
+  // Rejeite um código de dígito único. Isso não certifica a qualidade da fonte.
+  if (digitosDiferentes) {
+    EEPROM.put(ADDR_CHAVE, codigoRec);
+    salvarErros(0);
+    EEPROM.update(ADDR_REC_MAGIC, REC_PENDENTE); // Marcador por último.
+    chaveConfigurada = true;
+    confirmacoesChave = 3;
+  }
+  mostrarEntrada();
 }
 
 void zerarEntrada() {
@@ -475,8 +532,14 @@ void atualizarFase() {
   switch (fase) {
     case INICIANDO:
       fase = LIVRE;
-      if (bloqueado() && !portaAberta) esperarRecuperacao();
+      if (!chaveConfigurada) iniciarGeracaoCodigo();
+      else if (bloqueado() && !portaAberta) esperarRecuperacao();
       else mostrarEntrada();
+      break;
+    case GERANDO_CODIGO:
+      wdt_disable();
+      fase = LIVRE;
+      mostrarEntrada();
       break;
     case ABRINDO:
       pararServo();
@@ -607,7 +670,10 @@ void tratarTecla(char tecla) {
   // A mesma tecla tem funções diferentes no primeiro uso, bloqueio e histórico.
   if (fase != LIVRE) return;
   if (!portaAberta) {
-    if (!chaveConfigurada) return;
+    if (!chaveConfigurada) {
+      if (tecla == TECLA_CONFIRMAR) iniciarGeracaoCodigo();
+      return;
+    }
     if (confirmacoesChave != 0) {
       if (tecla == TECLA_CONFIRMAR) {
         if (--confirmacoesChave == 0) {
@@ -665,6 +731,7 @@ void tratarTecla(char tecla) {
 }
 
 void setup() {
+  wdt_disable(); // Só o primeiro uso ativa o watchdog em modo de interrupção.
   // EEPROM apagada contém 0xFF. Aceite somente quatro números com terminador.
   char salva[5];
   EEPROM.get(ADDR_PIN, salva);
@@ -710,6 +777,7 @@ void loop() {
   char tecla = lerPressionamento();
   if (tecla != '\0' && fase == LIVRE) tratarTecla(tecla);
   atualizarFase();
+  atualizarGeracaoCodigo();
   // O histórico fecha sozinho após 30 s, conservando o estado da porta.
   if (vendoHist && uint32_t(lerTimer() - ultimaAcaoHist) >= 30000UL * TICKS_POR_MS) {
     vendoHist = false;

@@ -4,12 +4,12 @@ Use este roteiro para executar os testes no Wokwi ou no circuito.
 
 ## Preparação
 
-1. No Wokwi, copie `sketch.ino`, `diagram.json` e `libraries.txt`. Adicione um `chave_dispositivo.h` gerado com `python3 scripts/gerar_chave.py` em uma cópia separada do projeto para a simulação.
-2. Em EEPROM vazia, o LCD mostra o código. Anote os 16 dígitos e pressione **Confirmar** três vezes, soltando o botão entre as pressões. Para testar a persistência, reinicie após a segunda pressão e verifique que o código reaparece. Depois, pressione três vezes e reinicie para verificar que o código continua oculto.
+1. Para testar o primeiro uso, grave os dois sketches pela Arduino IDE na ordem descrita no [README](README.md#começar-do-zero-pela-ide). Use o Wokwi para conferir a fiação. A geração no firmware depende da variação entre os relógios reais.
+2. Em EEPROM vazia, aguarde `Gerando codigo`. O LCD passa a mostrar o código. Anote os 16 dígitos e pressione **Confirmar** três vezes, soltando o botão entre as pressões. Para testar a persistência, reinicie após a segunda pressão e verifique que o código reaparece. Depois, pressione três vezes e reinicie para verificar que o código continua oculto.
 3. Em `Defina seu PIN`, escolha quatro dígitos e pressione **Confirmar**. Repita o PIN e confirme para salvar. Para testar a persistência do cadastro, reinicie antes de salvar e verifique que o LCD volta a pedir o PIN com o código oculto. Cadastre o PIN e reinicie novamente. O LCD deve mostrar `Digite a senha` e aceitar o PIN escolhido.
 4. No circuito físico, calibre o servo com a trava desacoplada antes dos testes. O Wokwi usa servo posicional e não valida o percurso do servo de rotação contínua.
 
-Use apenas um código de teste no simulador. Guarde o código real e o binário da unidade em local privado. Execute as etapas de bloqueio tendo o código cadastrado disponível.
+Use um código de demonstração para ensaiar. Guarde o código real em local privado. Execute as etapas de bloqueio tendo o código cadastrado disponível.
 
 ## Controles
 

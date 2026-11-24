@@ -18,7 +18,7 @@
 
 ## Como explicar o firmware
 
-Abra `sketch.ino` e siga esta ordem. Use os nomes das funções para localizar os trechos no editor.
+Abra `CofreEletronico/CofreEletronico.ino` e siga esta ordem. Use os nomes das funções para localizar os trechos no editor.
 
 1. **`setup()` e `loop()`.** O primeiro carrega a EEPROM, configura os periféricos e inicia o Timer2. Depois, cada volta do laço atende teclado, avisos, servo e recuperação. `Modo` indica qual operação de PIN está em curso e `Fase` indica o que está aguardando um intervalo.
 2. **`configurarTimer()` e `atualizarFase()`.** A 16 MHz, o Timer2 divide o relógio por 8 e conta de 0 a 249. Isso dá 8.000 interrupções por segundo, oito por milissegundo. Alternar o pino do buzzer a cada interrupção gera 4 kHz. O firmware agenda o próximo passo com a diferença entre dois valores do contador. O Timer1 fica com a biblioteca Servo.
@@ -33,37 +33,21 @@ Se o professor perguntar sobre as limitações, explique que o servo é acionado
 
 | Arquivo | O que procurar |
 | --- | --- |
-| [sketch.ino](sketch.ino) | Código que roda continuamente no Arduino. Os comentários explicam o Timer2, as prioridades do LCD, o bloqueio, a confirmação do PIN e a organização da memória. |
+| [CofreEletronico.ino](CofreEletronico/CofreEletronico.ino) | Código que roda continuamente no Arduino. Os comentários explicam o Timer2, as prioridades do LCD, o bloqueio, a confirmação do PIN e a organização da memória. |
 | [diagram.json](diagram.json) e [libraries.txt](libraries.txt) | Configuração do Wokwi. `parts` lista as peças, `attrs` descreve propriedades como o endereço do LCD e `connections` liga dois pinos pelo identificador da peça. A lista de bibliotecas indica as dependências do simulador. O JSON usa o formato que o Wokwi lê diretamente. |
-| [scripts/gravar.py](scripts/gravar.py) e [scripts/gravar.sh](scripts/gravar.sh) | O Python escolhe a porta, compila e grava. O shell só chama o Python no Linux e no macOS. |
-| [scripts/gerar_chave.py](scripts/gerar_chave.py) | Sorteia os 16 dígitos, preserva zeros à esquerda e escreve o cabeçalho privado que será lido na compilação. |
-| [LimparEEPROM.ino](scripts/LimparEEPROM/LimparEEPROM.ino) e [verificar_eeprom.py](scripts/verificar_eeprom.py) | O programa temporário apaga e relê cada byte no Arduino. O Python confere pela serial o total de bytes apagados. |
+| [LimparEEPROM.ino](LimparEEPROM/LimparEEPROM.ino) | Sketch temporário aberto na IDE para apagar os dados. Envie `?` no Monitor Serial a 115200 baud para conferir a limpeza. |
 | [tests/test_senha.py](tests/test_senha.py) | Monta um Arduino simulado em C++, chama as funções do sketch e compara a tela, a memória e os pulsos do servo com o esperado. |
 | [arduino-build.yml](.github/workflows/arduino-build.yml) e [release-v1.yml](.github/workflows/release-v1.yml) | O primeiro valida o diagrama, roda os testes e compila no GitHub Actions. O segundo registra a publicação da versão histórica v1.0.0. |
 
 ## Regravar por conta própria
 
-Conecte o Uno por USB e abra o terminal na pasta do projeto. Em outro computador, siga primeiro a instalação no [README](README.md). A escolha automática usa o modelo USB da placa, por isso funciona mesmo quando o sistema muda o nome da porta.
-
-```bash
-cd ~/Projects/cofre-eletronico
-./scripts/gravar.sh
-```
-
-No Windows, use `py -3 scripts/gravar.py` na pasta do projeto.
-
-Esse comando apaga o PIN, o código e o histórico e gera outro código. Use-o quando quiser demonstrar o primeiro uso. A linha `EEPROM limpa e firmware gravado e verificado.` confirma o final da operação. Após gravar, o código aparece no LCD. Anote-o de novo antes de cadastrar o PIN.
-
-Para explicar o script ao professor, acompanhe as três etapas que ele mostra no terminal. Primeiro o computador gera o código e compila. Depois, um programa auxiliar no Arduino limpa a EEPROM e informa quantos bytes foram apagados. Por fim, o gravador coloca o firmware do cofre na placa e verifica a gravação.
-
-Para conferir o software sem escrever na placa, rode `python3 tests/test_senha.py` na mesma pasta. O teste usa `g++` para simular o firmware, incluindo os 16 asteriscos, o bloqueio e a confirmação do PIN.
+Siga o [roteiro da Arduino IDE no README](README.md#como-compilar-e-gravar-na-arduino-ide). Se quiser mostrar o primeiro uso, grave `LimparEEPROM.ino`, confirme `1024/1024` no Monitor Serial e depois grave `CofreEletronico.ino`. O Uno gera o novo código sem precisar do computador depois de gravado.
 
 | Se acontecer | Faça isto |
 | --- | --- |
-| A porta sumiu | Reconecte o cabo USB de dados, feche o Monitor Serial e acrescente `--portas` ao comando para descobrir o nome da porta. |
-| Há mais de uma opção | Informe a porta no comando, como `./scripts/gravar.sh /dev/ttyACM1` ou `py -3 scripts/gravar.py COM3`. |
+| A porta sumiu | Reconecte o cabo USB de dados e selecione novamente **Ferramentas → Porta**. Feche o Monitor Serial antes de carregar. |
 | Sem permissão no Linux | Execute `sudo setfacl -m "u:$(id -un):rw" /dev/ttyACM1`, usando a porta mostrada no seu computador. A permissão dura até desconectar a placa. |
-| O LCD mostrar `Codigo ausente` | Grave pelo script e aguarde a confirmação. Ele inclui o código no firmware. |
+| O LCD mostrar `Falha na geracao` | Pressione **Confirmar** no Uno físico. O firmware tenta coletar novas amostras dos relógios. |
 | O LCD mostrar `Bloqueado 30s` | Aguarde 30 segundos. O cofre exige essa espera após reiniciar bloqueado ou informar um código errado. |
 
 Para um ensaio mais longo, use o [guia de controles e testes](GUIA_TESTES.md). Para mostrar a fiação, abra [o diagrama](diagram.json) no Wokwi ou consulte a tabela de pinagem no [README](README.md).

@@ -50,7 +50,5 @@ jobs:
 
       - name: Compilar sketch para Arduino Uno R3
         run: |
-          # Arduino CLI exige que o arquivo principal tenha o mesmo nome da pasta.
-          mkdir -p "$RUNNER_TEMP/cofre_eletronico"
-          cp sketch.ino "$RUNNER_TEMP/cofre_eletronico/cofre_eletronico.ino"
-          arduino-cli compile --fqbn arduino:avr:uno "$RUNNER_TEMP/cofre_eletronico"
+          arduino-cli compile --fqbn arduino:avr:uno CofreEletronico
+          arduino-cli compile --fqbn arduino:avr:uno LimparEEPROM
