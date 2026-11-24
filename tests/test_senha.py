@@ -12,11 +12,15 @@ STUBS = r'''
 #include <assert.h>
 typedef uint8_t byte;
 const int LOW=0, HIGH=1, INPUT=0, OUTPUT=1, INPUT_PULLUP=2, A2=16;
-unsigned long clockMs=0;
+#define F_CPU 16000000UL
+#define _BV(x) (1U<<(x))
+#define ISR(vector) void vector()
+#define ATOMIC_RESTORESTATE 0
+#define ATOMIC_BLOCK(type) for (bool atomicOnce=true; atomicOnce; atomicOnce=false)
+const int PC2=2, WGM21=1, OCF2A=1, OCIE2A=1, CS21=1;
+uint8_t TCCR2A=0,TCCR2B=0,TCNT2=0,OCR2A=0,TIFR2=0,TIMSK2=0,PINC=0,PORTC=0;
 unsigned int keys=0;
 int activeRow=-1;
-unsigned long millis() { return clockMs; }
-void delayMicroseconds(unsigned int) {}
 void digitalWrite(byte, int) {}
 void pinMode(byte pin, int mode) {
   if (pin>=2 && pin<=5) {
@@ -26,20 +30,6 @@ void pinMode(byte pin, int mode) {
 }
 int digitalRead(byte pin) {
   return activeRow>=0 && (keys & (1U<<(activeRow*3+pin-6))) ? LOW : HIGH;
-}
-struct BuzzerEvent {
-  bool ligado; byte pino; unsigned int frequencia; unsigned long duracao; unsigned long instante;
-};
-BuzzerEvent buzzerEvents[64];
-int buzzerCount=0;
-unsigned long buzzerClockMs=0;
-void tone(byte pino, unsigned int frequencia, unsigned long duracao=0) {
-  assert(buzzerCount<64);
-  buzzerEvents[buzzerCount++]={true,pino,frequencia,duracao,buzzerClockMs};
-}
-void noTone(byte pino) {
-  assert(buzzerCount<64);
-  buzzerEvents[buzzerCount++]={false,pino,0,0,buzzerClockMs};
 }
 struct LiquidCrystal_I2C {
   char lines[2][17] = {}; int x=0, y=0;
@@ -56,17 +46,6 @@ struct Servo {
   void detach() { enabled=false; }
   void writeMicroseconds(int value) { pulse=value; }
 };
-extern Servo trava;
-int pulses[32], pulseCount=0;
-unsigned long durations[32];
-void delay(unsigned long ms) {
-  buzzerClockMs+=ms;
-  if (trava.enabled) {
-    assert(pulseCount<32);
-    pulses[pulseCount]=trava.pulse;
-    durations[pulseCount++]=ms;
-  }
-}
 struct EEPROMClass {
   char data[6]; int writes=0;
   EEPROMClass() { memset(data,255,sizeof(data)); }
@@ -86,132 +65,117 @@ struct EEPROMClass {
 } EEPROM;
 '''
 TESTS = r'''
+void ticks(uint32_t count) {
+  while (count--) { TIMER2_COMPA_vect(); loop(); }
+}
+void runMs(uint32_t ms) { ticks(ms * TICKS_POR_MS); }
 void enter(const char *text) { while (*text) tratarTecla(*text++); }
-char sample(unsigned int mask, unsigned long elapsed) {
-  keys=mask; clockMs+=elapsed; return lerPressionamento();
+void release() { keys=0; runMs(50); }
+void press(unsigned int mask) { keys=mask; runMs(50); release(); }
+void stopped() { assert(trava.enabled && trava.pulse==SERVO_PARADO_US); }
+void restart() {
+  strcpy(senha,"1234"); modo=NORMAL; quantidade=0; digitado[0]=0;
+  keys=0; setup(); runMs(100); assert(fase==LIVRE); stopped();
 }
-void release() { sample(0,0); assert(sample(0,40)==0); }
-void holdToChange() {
-  const unsigned int combo=(1U<<9)|(1U<<11);
-  assert(sample(combo,0)==0);
-  assert(sample(combo,40)==0);
-  assert(sample(combo,4999)==0);
-  assert(modo==NORMAL);
-  assert(sample(combo,1)==TECLA_TROCAR_SENHA);
-  tratarTecla(TECLA_TROCAR_SENHA);
-  assert(modo==VALIDAR_ATUAL && !portaAberta);
-  assert(sample(combo,10000)==0);
-  // Releasing Limpar first must not submit the current password.
-  assert(sample(1U<<11,0)==0);
-  assert(sample(1U<<11,40)==0);
-  release();
-}
-void assertStopped() {
-  assert(trava.enabled && trava.pulse==SERVO_PARADO_US);
-}
-void assertMovement(int start, int direction) {
-  assert(pulseCount>=start+2);
-  assert(pulses[start]==direction && durations[start]==TEMPO_MOVIMENTO_MS);
-  assert(pulses[start+1]==SERVO_PARADO_US && durations[start+1]==100);
-  for (int i=start+2;i<pulseCount;i++) assert(pulses[i]==SERVO_PARADO_US);
-  assertStopped();
+void wrongPassword() {
+  assert(fase==ERRO_SONORO && buzzerLigado && !portaAberta);
+  PINC=0; ticks(1); assert(PINC==_BV(PC2));
+  ticks(1500*TICKS_POR_MS-2);
+  assert(buzzerLigado && fase==ERRO_SONORO);
+  ticks(1); assert(!buzzerLigado && fase==ERRO_SILENCIOSO);
+  assert(!(PORTC & _BV(PC2)));
+  runMs(199); assert(fase==ERRO_SILENCIOSO);
+  runMs(1); assert(fase==LIVRE && quantidade==0);
 }
 int main() {
-  setup();
+  restart();
+  assert(OCR2A==249 && TCCR2A==_BV(WGM21) && TCCR2B==_BV(CS21));
+  assert(TIMSK2==_BV(OCIE2A));
   assert(strcmp(senha,"1234")==0 && !portaAberta);
-  assertStopped();
-  assert(pulseCount==1 && pulses[0]==SERVO_PARADO_US);
-  for (int key=0;key<12;key++) {
-    keys=1U<<key; assert(lerTeclado()==TECLAS[key/3][key%3]);
-    assert(activeRow==-1);
+  assert(strcmp(lcd.lines[0],"Digite a senha")==0);
+  for (int key=0; key<12; ++key) {
+    keys=1U<<key;
+    char read=0; bool done=false;
+    for (int i=0; i<16 && !done; ++i) {
+      TIMER2_COMPA_vect(); done=lerTeclado(read);
+    }
+    done=false;
+    for (int i=0; i<16 && !done; ++i) {
+      TIMER2_COMPA_vect(); done=lerTeclado(read);
+    }
+    assert(done && read==TECLAS[key/3][key%3]);
   }
-  keys=3; assert(lerTeclado()==0);
-  // Normal debounce and one event per press.
-  assert(sample(1,0)==0); assert(sample(1,39)==0);
-  assert(sample(1,1)=='1'); assert(sample(1,1000)==0); release();
-  // An interrupted hold must start its five seconds again.
-  const unsigned int combo=(1U<<9)|(1U<<11);
-  sample(combo,0); sample(combo,40); assert(sample(combo,4900)==0);
   release();
-  holdToChange();
+  press(3); assert(quantidade==0);
+  keys=1; runMs(40); assert(quantidade==0);
+  runMs(2); assert(quantidade==1 && digitado[0]=='1');
+  runMs(1000); assert(quantidade==1); release();
+  press(1U<<9); assert(quantidade==0);
+  const unsigned int combo=(1U<<9)|(1U<<11);
+  keys=combo; runMs(4900); release(); assert(modo==NORMAL);
+  keys=combo; runMs(5040); assert(modo==NORMAL);
+  runMs(2); assert(modo==VALIDAR_ATUAL && !portaAberta);
+  runMs(6000); assert(modo==VALIDAR_ATUAL);
+  keys=1U<<11; runMs(50); assert(fase==LIVRE && quantidade==0);
+  release();
   assert(strcmp(lcd.lines[0],"Senha atual:")==0);
-  enter("9999#"); assert(modo==VALIDAR_ATUAL && !portaAberta);
-  assert(strcmp(senha,"1234")==0 && EEPROM.writes==0);
-  enter("123#"); assert(modo==VALIDAR_ATUAL && quantidade==3);
-  enter("4#"); assert(modo==DEFINIR_NOVA && !portaAberta && quantidade==0);
+  enter("9999#"); wrongPassword();
+  assert(modo==VALIDAR_ATUAL && EEPROM.writes==0);
+  enter("123#"); assert(fase==AVISO_PRESERVAR && quantidade==3);
+  runMs(900); assert(fase==LIVRE && quantidade==3);
+  enter("4#"); assert(modo==DEFINIR_NOVA && quantidade==0);
   assert(strcmp(lcd.lines[0],"Nova senha:")==0);
-  enter("56#"); assert(modo==DEFINIR_NOVA && quantidade==2 && EEPROM.writes==0);
-  enter("*000078"); assert(strcmp(digitado,"0000")==0 && quantidade==4);
-  enter("#");
-  assert(modo==NORMAL && !portaAberta);
-  assertStopped();
-  for (int i=0;i<pulseCount;i++) assert(pulses[i]==SERVO_PARADO_US);
+  enter("56#"); runMs(900);
+  assert(modo==DEFINIR_NOVA && quantidade==2 && EEPROM.writes==0);
+  enter("*000078#"); assert(fase==AVISO_LIMPAR);
   assert(strcmp(senha,"0000")==0 && EEPROM.writes==1);
-  // Simulate RAM returning to its initial value on restart.
-  strcpy(senha,"1234"); setup(); assert(strcmp(senha,"0000")==0);
-  int erroBuzzer=buzzerCount;
-  enter("1234#"); assert(!portaAberta);
-  assert(buzzerCount==erroBuzzer+1);
-  assert(buzzerEvents[erroBuzzer].ligado && buzzerEvents[erroBuzzer].frequencia==4000);
-  assert(buzzerEvents[erroBuzzer].duracao==1500);
-  int start=pulseCount;
-  int aberturaBuzzer=buzzerCount;
-  unsigned long aberturaInicioMs=buzzerClockMs;
-  enter("0000#"); assert(portaAberta);
-  assertMovement(start,SERVO_ABRIR_US);
-  assert(buzzerCount==aberturaBuzzer+4);
-  assert(buzzerEvents[aberturaBuzzer].ligado && buzzerEvents[aberturaBuzzer].pino==PIN_BUZZER);
-  assert(buzzerEvents[aberturaBuzzer].frequencia==FREQUENCIA_BEEP_ABERTURA_HZ);
-  assert(buzzerEvents[aberturaBuzzer].duracao==0);
-  assert(!buzzerEvents[aberturaBuzzer+1].ligado);
-  assert(buzzerEvents[aberturaBuzzer+2].ligado && buzzerEvents[aberturaBuzzer+2].pino==PIN_BUZZER);
-  assert(buzzerEvents[aberturaBuzzer+2].frequencia==FREQUENCIA_BEEP_ABERTURA_HZ);
-  assert(!buzzerEvents[aberturaBuzzer+3].ligado);
-  assert(buzzerEvents[aberturaBuzzer].instante==aberturaInicioMs+TEMPO_MOVIMENTO_MS+100);
-  assert(buzzerEvents[aberturaBuzzer+1].instante-buzzerEvents[aberturaBuzzer].instante==DURACAO_BEEP_ABERTURA_MS);
-  assert(buzzerEvents[aberturaBuzzer+2].instante-buzzerEvents[aberturaBuzzer+1].instante==INTERVALO_BEEPS_ABERTURA_MS);
-  assert(buzzerEvents[aberturaBuzzer+3].instante-buzzerEvents[aberturaBuzzer+2].instante==DURACAO_BEEP_ABERTURA_MS);
+  runMs(1200); assert(fase==LIVRE && modo==NORMAL && quantidade==0);
+  stopped(); restart(); assert(strcmp(senha,"0000")==0);
+  enter("1234#"); wrongPassword();
+  enter("0000#");
+  assert(fase==ABRINDO && !portaAberta && trava.pulse==SERVO_ABRIR_US);
   assert(EEPROM.read(sizeof(senha))==1);
-  // Restart with reset RAM while the physical safe is still open.
-  portaAberta=false; strcpy(senha,"1234");
-  start=pulseCount;
-  int reinicioBuzzer=buzzerCount;
-  setup();
-  assert(buzzerCount==reinicioBuzzer+1 && !buzzerEvents[reinicioBuzzer].ligado);
-  assert(portaAberta && strcmp(senha,"0000")==0);
-  assert(pulseCount==start+1 && pulses[start]==SERVO_PARADO_US);
-  assertStopped();
+  runMs(499); assert(trava.pulse==SERVO_ABRIR_US && !buzzerLigado);
+  runMs(1); stopped(); assert(fase==NEUTRO_ABERTURA);
+  runMs(99); assert(!buzzerLigado);
+  runMs(1); assert(portaAberta && fase==BEEP_1 && buzzerLigado);
+  tratarTecla('#'); assert(fase==BEEP_1);
+  runMs(69); assert(buzzerLigado); runMs(1);
+  assert(fase==INTERVALO_BEEPS && !buzzerLigado);
+  runMs(49); assert(!buzzerLigado); runMs(1);
+  assert(fase==BEEP_2 && buzzerLigado);
+  runMs(69); assert(buzzerLigado); runMs(1);
+  assert(fase==LIVRE && !buzzerLigado);
+  stopped(); restart(); assert(portaAberta && !buzzerLigado);
   assert(strcmp(lcd.lines[0],"Para fechar:")==0);
   assert(strcmp(lcd.lines[1],"Aperte Confirmar")==0);
-  enter("9*"); assert(portaAberta && quantidade==0);
-  tratarTecla(TECLA_TROCAR_SENHA); assert(modo==NORMAL && portaAberta);
-  start=pulseCount;
-  int fechamentoBuzzer=buzzerCount;
-  enter("#"); assert(!portaAberta);
-  assert(buzzerCount==fechamentoBuzzer);
-  assertMovement(start,SERVO_FECHAR_US);
-  assert(EEPROM.read(sizeof(senha))==0);
-  assert(strcmp(senha,"0000")==0);
-  portaAberta=true;
-  start=pulseCount;
-  setup();
-  assert(!portaAberta && strcmp(senha,"0000")==0);
-  assert(pulseCount==start+1 && pulses[start]==SERVO_PARADO_US);
-  assert(strcmp(lcd.lines[0],"Digite a senha")==0);
-  start=pulseCount; enter("#"); assert(!portaAberta);
-  assert(pulseCount==start+1 && pulses[start]==SERVO_PARADO_US);
-  assertStopped();
-  assert(SERVO_ABRIR_US>SERVO_PARADO_US && SERVO_FECHAR_US<SERVO_PARADO_US);
-  // Invalid persisted bytes must never become a password.
-  memcpy(EEPROM.data,"12x4",5); strcpy(senha,"1234"); setup();
-  assert(strcmp(senha,"1234")==0);
-  memcpy(EEPROM.data,"12345",5); setup(); assert(strcmp(senha,"1234")==0);
+  enter("9*T"); assert(portaAberta && quantidade==0 && modo==NORMAL);
+  enter("#"); assert(fase==FECHANDO && trava.pulse==SERVO_FECHAR_US);
+  runMs(499); assert(trava.pulse==SERVO_FECHAR_US);
+  runMs(1); stopped(); assert(fase==NEUTRO_FECHAMENTO);
+  runMs(99); assert(EEPROM.read(sizeof(senha))==1);
+  runMs(1); assert(!portaAberta && EEPROM.read(sizeof(senha))==0);
+  assert(!buzzerLigado && fase==AVISO_LIMPAR);
+  runMs(800); assert(fase==LIVRE);
+  restart(); assert(!portaAberta && strcmp(senha,"0000")==0);
+  enter("#"); runMs(900); stopped();
+  ticksTimer=UINT32_MAX-100;
+  enter("0000#"); runMs(499); assert(fase==ABRINDO);
+  runMs(1); stopped(); assert(fase==NEUTRO_ABERTURA);
+  restart(); assert(portaAberta);
+  memcpy(EEPROM.data,"12x4",5); restart(); assert(strcmp(senha,"1234")==0);
+  memcpy(EEPROM.data,"12345",5); restart(); assert(strcmp(senha,"1234")==0);
 }
 '''
 
 with tempfile.TemporaryDirectory(prefix="cofre-test-") as tmp:
     folder = Path(tmp)
     (folder / "Wire.h").write_text(STUBS)
+    for directory, header in [("avr", "interrupt.h"), ("util", "atomic.h")]:
+        (folder / directory).mkdir()
+        (folder / directory / header).write_text('#include "Wire.h"\n')
+    import re
+    assert not re.search(r"\b(?:delay|delayMicroseconds|millis|micros|tone|noTone)\s*\(", (ROOT / "sketch.ino").read_text())
     for name in ["LiquidCrystal_I2C.h", "Servo.h", "EEPROM.h"]:
         (folder / name).write_text('#include "Wire.h"\n')
     test = folder / "test.cpp"
@@ -220,4 +184,4 @@ with tempfile.TemporaryDirectory(prefix="cofre-test-") as tmp:
     subprocess.run([os.environ.get("CXX", "g++"), "-std=c++11", "-Wall", "-Wextra",
                     "-Werror", "-I", tmp, str(test), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-print("OK: teclado, autenticação, EEPROM, servo e dois bipes rápidos somente na abertura (70/50/70 ms).")
+print("OK: Timer2, teclado, autenticação, EEPROM, servo, dois bipes e transbordamento do contador.")
