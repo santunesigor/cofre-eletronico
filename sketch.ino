@@ -11,6 +11,7 @@
 #include <Servo.h>
 #include <EEPROM.h>
 #include <string.h>
+#include <stdio.h>
 #include <avr/interrupt.h>
 #include <util/atomic.h>
 
@@ -89,6 +90,64 @@ char digitado[5] = "";
 byte quantidade = 0;
 bool portaAberta = false;
 
+// EEPROM: preserva os bytes da senha e do estado usados na v1.0.0.
+const byte ADDR_REC_MAGIC = 6, ADDR_ERROS = 7, ADDR_SESSAO = 8, ADDR_CHAVE = 12;
+const byte REC_MAGIC = 0xA5, MAX_ERROS = 3;
+const uint32_t JANELA_MS = 60000UL, ESPERA_REC_MS = 30000UL;
+byte erros = 0;
+bool chaveConfigurada = false, confirmarChave = false;
+char chaveRec[16];
+char entradaRec[17] = "";
+byte qtdRec = 0;
+uint32_t sessaoRec = 0, inicioJanela = 0;
+uint16_t janelaRec = 0;
+
+// SipHash-2-4, chave de 128 bits, mensagem de oito bytes little-endian.
+// A chave de recuperacao e escolhida pelo proprietario, nunca pelo repositorio.
+uint64_t rotl64(uint64_t v, byte n) { return (v << n) | (v >> (64 - n)); }
+uint64_t ler64(const char *p) {
+  uint64_t v = 0;
+  for (byte i = 0; i < 8; ++i) v |= uint64_t(uint8_t(p[i])) << (8 * i);
+  return v;
+}
+void sipRound(uint64_t &v0, uint64_t &v1, uint64_t &v2, uint64_t &v3) {
+  v0 += v1; v1 = rotl64(v1, 13); v1 ^= v0; v0 = rotl64(v0, 32);
+  v2 += v3; v3 = rotl64(v3, 16); v3 ^= v2;
+  v0 += v3; v3 = rotl64(v3, 21); v3 ^= v0;
+  v2 += v1; v1 = rotl64(v1, 17); v1 ^= v2; v2 = rotl64(v2, 32);
+}
+uint64_t sipHash8(const char *key, uint64_t msg) {
+  uint64_t k0 = ler64(key), k1 = ler64(key + 8);
+  uint64_t v0 = 0x736f6d6570736575ULL ^ k0, v1 = 0x646f72616e646f6dULL ^ k1;
+  uint64_t v2 = 0x6c7967656e657261ULL ^ k0, v3 = 0x7465646279746573ULL ^ k1;
+  v3 ^= msg;
+  for (byte i = 0; i < 2; ++i) sipRound(v0, v1, v2, v3);
+  v0 ^= msg;
+  const uint64_t b = 8ULL << 56;
+  v3 ^= b;
+  for (byte i = 0; i < 2; ++i) sipRound(v0, v1, v2, v3);
+  v0 ^= b; v2 ^= 0xff;
+  for (byte i = 0; i < 4; ++i) sipRound(v0, v1, v2, v3);
+  return v0 ^ v1 ^ v2 ^ v3;
+}
+uint32_t codigoRec() {
+  return uint32_t(sipHash8(chaveRec, (uint64_t(sessaoRec) << 16) | janelaRec) % 1000000ULL);
+}
+void limparRec() { qtdRec = 0; entradaRec[0] = 0; }
+void salvarErros(byte valor) {
+  erros = valor;
+  EEPROM.update(ADDR_ERROS, erros);
+}
+void novaSessao() {
+  ++sessaoRec;
+  EEPROM.put(ADDR_SESSAO, sessaoRec);
+  janelaRec = 0;
+  inicioJanela = lerTimer();
+  limparRec();
+}
+bool bloqueado() { return chaveConfigurada && erros >= MAX_ERROS; }
+
+
 char leituraAnterior = '\0';
 char teclaEstavel = '\0';
 uint32_t ultimaMudanca = 0;
@@ -102,7 +161,7 @@ char teclaLida = '\0';
 
 enum Fase { LIVRE, INICIANDO, ABRINDO, NEUTRO_ABERTURA, BEEP_1,
             INTERVALO_BEEPS, BEEP_2, FECHANDO, NEUTRO_FECHAMENTO,
-            AVISO_LIMPAR, AVISO_PRESERVAR, ERRO_SONORO, ERRO_SILENCIOSO };
+            AVISO_LIMPAR, AVISO_PRESERVAR, ERRO_SONORO, ERRO_SILENCIOSO, ESPERA_REC };
 Fase fase = LIVRE;
 uint32_t inicioFase = 0;
 uint32_t duracaoFase = 0;
@@ -123,6 +182,20 @@ void mostrarEntrada() {
     lcd.print("Aperte Confirmar");
     return;
   }
+  if (!chaveConfigurada || bloqueado()) {
+    if (!chaveConfigurada) {
+      lcd.print(confirmarChave ? "Repita a chave" : "Chave 16 digitos");
+      lcd.setCursor(0, 1);
+    } else {
+      char id[17];
+      snprintf(id, sizeof(id), "ID: %08lX%04X", (unsigned long)sessaoRec, (unsigned int)janelaRec);
+      lcd.print(id);
+      lcd.setCursor(0, 1);
+      lcd.print("Codigo: ");
+    }
+    for (byte i = 0; i < qtdRec; ++i) lcd.print('*');
+    return;
+  }
   if (modo == VALIDAR_ATUAL) lcd.print("Senha atual:");
   else if (modo == DEFINIR_NOVA) lcd.print("Nova senha:");
   else lcd.print("Digite a senha");
@@ -136,6 +209,68 @@ void mostrarEntrada() {
 void limparEntrada() {
   quantidade = 0;
   digitado[0] = '\0';
+  mostrarEntrada();
+}
+
+// A cada minuto, a janela muda e a entrada anterior e descartada.
+void atualizarDesafio() {
+  if (!bloqueado() || portaAberta || fase != LIVRE) return;
+  if (uint32_t(lerTimer() - inicioJanela) >= JANELA_MS * TICKS_POR_MS) {
+    if (janelaRec == 0xffff) novaSessao();
+    else {
+      ++janelaRec;
+      inicioJanela = lerTimer();
+      limparRec();
+    }
+    mostrarEntrada();
+  }
+}
+
+void esperarRecuperacao() {
+  limparRec();
+  lcd.clear();
+  lcd.print("Bloqueado 30s");
+  iniciarFase(ESPERA_REC, ESPERA_REC_MS);
+}
+
+void tratarRec(char tecla) {
+  byte limite = chaveConfigurada ? 6 : 16;
+  if (tecla == TECLA_LIMPAR) {
+    limparRec();
+  } else if (tecla == TECLA_CONFIRMAR && qtdRec == limite) {
+    if (!chaveConfigurada) {
+      if (!confirmarChave) {
+        memcpy(chaveRec, entradaRec, sizeof(chaveRec));
+        confirmarChave = true;
+      } else if (memcmp(chaveRec, entradaRec, sizeof(chaveRec)) == 0) {
+        EEPROM.put(ADDR_CHAVE, chaveRec);
+        sessaoRec = 0;
+        EEPROM.put(ADDR_SESSAO, sessaoRec);
+        salvarErros(0);
+        EEPROM.update(ADDR_REC_MAGIC, REC_MAGIC); // marcador por ultimo
+        chaveConfigurada = true;
+        confirmarChave = false;
+      } else {
+        confirmarChave = false;
+      }
+      limparRec();
+    } else {
+      uint32_t informado = 0;
+      for (byte i = 0; i < 6; ++i) informado = informado * 10 + (entradaRec[i] - '0');
+      if (informado == codigoRec()) {
+        salvarErros(0);
+        modo = NORMAL;
+        limparRec();
+        limparEntrada(); // exige o PIN original; nao abre o servo
+        return;
+      }
+      esperarRecuperacao();
+      return;
+    }
+  } else if (tecla >= '0' && tecla <= '9' && qtdRec < limite) {
+    entradaRec[qtdRec++] = tecla;
+    entradaRec[qtdRec] = 0;
+  }
   mostrarEntrada();
 }
 
@@ -222,7 +357,8 @@ void atualizarFase() {
   switch (fase) {
     case INICIANDO:
       fase = LIVRE;
-      mostrarEntrada();
+      if (bloqueado() && !portaAberta) esperarRecuperacao();
+      else mostrarEntrada();
       break;
     case ABRINDO:
       pararServo();
@@ -270,6 +406,11 @@ void atualizarFase() {
       fase = LIVRE;
       mostrarEntrada();
       break;
+    case ESPERA_REC:
+      novaSessao();
+      fase = LIVRE;
+      mostrarEntrada();
+      break;
     case LIVRE:
       break;
   }
@@ -290,6 +431,7 @@ void confirmarSenha() {
     lcd.print("Senha alterada!");
     iniciarFase(AVISO_LIMPAR, 1200);
   } else if (strcmp(digitado, senha) == 0) {
+    salvarErros(0);
     if (modo == VALIDAR_ATUAL) {
       modo = DEFINIR_NOVA;
       limparEntrada();
@@ -299,6 +441,11 @@ void confirmarSenha() {
     digitado[0] = '\0';
     abrirPorta();
   } else {
+    if (erros < MAX_ERROS) salvarErros(erros + 1);
+    if (bloqueado()) {
+      modo = NORMAL;
+      novaSessao();
+    }
     lcd.clear();
     lcd.print("Senha incorreta");
     lcd.setCursor(0, 1);
@@ -310,6 +457,10 @@ void confirmarSenha() {
 
 void tratarTecla(char tecla) {
   if (fase != LIVRE) return;
+  if (!portaAberta && (!chaveConfigurada || bloqueado())) {
+    tratarRec(tecla);
+    return;
+  }
   if (tecla == TECLA_TROCAR_SENHA) {
     if (!portaAberta && modo == NORMAL) {
       modo = VALIDAR_ATUAL;
@@ -342,6 +493,18 @@ void setup() {
   }
   if (valida) strcpy(senha, salva);
   portaAberta = EEPROM.read(sizeof(senha)) == 1;
+  chaveConfigurada = EEPROM.read(ADDR_REC_MAGIC) == REC_MAGIC;
+  confirmarChave = false;
+  limparRec();
+  erros = 0;
+  sessaoRec = 0;
+  janelaRec = 0;
+  if (chaveConfigurada) {
+    EEPROM.get(ADDR_CHAVE, chaveRec);
+    EEPROM.get(ADDR_SESSAO, sessaoRec);
+    erros = EEPROM.read(ADDR_ERROS);
+    if (erros > MAX_ERROS) erros = MAX_ERROS;
+  }
   for (byte i = 0; i < 4; i++) pinMode(PIN_LINHAS[i], INPUT);
   for (byte i = 0; i < 3; i++) pinMode(PIN_COLUNAS[i], INPUT_PULLUP);
   pinMode(PIN_BUZZER, OUTPUT);
@@ -364,6 +527,7 @@ void setup() {
 }
 
 void loop() {
+  atualizarDesafio();
   char tecla = lerPressionamento();
   if (tecla != '\0' && fase == LIVRE) tratarTecla(tecla);
   atualizarFase();

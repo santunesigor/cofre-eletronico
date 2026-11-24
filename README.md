@@ -17,6 +17,14 @@ Protótipo didático de um cofre eletrônico com Arduino Uno, senha numérica, d
 - Para trocar a senha, com o cofre fechado, segure **Limpar + Confirmar juntos por 5 segundos** e solte os dois. O LCD pede `Senha atual:`; digite os quatro números atuais e pressione **Confirmar**. Em `Nova senha:`, digite exatamente quatro números e pressione **Confirmar** para salvar.
 - Durante a troca, **Limpar** apaga a entrada, dígitos além do quarto são ignorados e uma senha atual incorreta impede a alteração. A nova senha permanece salva após desligar o Arduino.
 
+## Bloqueio e contrassenha (versão em desenvolvimento)
+
+Na primeira inicialização desta versão, com o cofre fechado, configure uma chave de recuperação de **16 dígitos aleatórios**. Abra o arquivo [recuperacao.html](recuperacao.html) em um navegador local, gere a chave e guarde-a em local seguro. Digite-a no teclado do cofre, pressione Confirmar, repita e confirme. Ela fica salva na EEPROM e não deve ser enviada ao GitHub. Se o cofre estiver aberto ao atualizar, feche-o antes da configuração.
+
+Após três senhas completas incorretas consecutivas, o LCD mostra um identificador (ID) de 12 caracteres hexadecimais. O ID muda a cada minuto usando o Timer2; o Arduino não tem relógio de calendário. Informe a chave secreta e o ID atual no calculador offline. Digite a contrassenha de seis dígitos no cofre e pressione Confirmar. Uma contrassenha válida apenas libera a digitação do PIN normal, sem abrir diretamente a trava. Uma tentativa de recuperação errada exige 30 segundos de espera e gera uma nova sessão. Reiniciar não elimina o bloqueio e também exige espera antes de apresentar um novo ID. O contador de erros é zerado após autenticação normal correta ou recuperação válida.
+
+A função SipHash-2-4 usa a chave de 16 caracteres ASCII e a mensagem de oito bytes little-endian correspondente ao ID hexadecimal. O resultado reduzido módulo 1.000.000 produz o código de seis dígitos (incluindo zeros à esquerda). O ID combina um contador persistente de sessões e uma janela de tempo, não depende de internet nem de relógio externo. A chave deve ser gerada aleatoriamente e guardada; sem ela, a recuperação exige manutenção física do firmware/EEPROM. Configure em ambiente confiável. Este é um protótipo: a EEPROM não é protegida contra leitura ou regravação física e o código de seis dígitos não oferece segurança equivalente a um cofre certificado.
+
 ## Temporização por hardware
 
 O Arduino Uno R3 (ATmega328P, 16 MHz) usa o **Timer2 em modo CTC**, com prescaler 8 e OCR2A = 249, gerando uma interrupção a cada 125 µs (8 kHz). A interrupção incrementa um contador de ticks e alterna o pino A2 quando o buzzer está ativo, produzindo 4 kHz. O Timer1 permanece reservado à biblioteca Servo; o Timer0 do núcleo Arduino não é reconfigurado.

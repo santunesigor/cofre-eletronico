@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contrassenha do cofre</title>
+<style>body{font:16px system-ui;max-width:32rem;margin:2rem auto;padding:0 1rem;color:#202329;background:#fafafa}label,input,button{display:block;margin:.7rem 0}input,button{font:inherit;padding:.75rem;box-sizing:border-box;width:100%}output{display:block;font:700 2.5rem monospace;letter-spacing:.15em;margin:1rem 0}small{color:#555}</style>
+<h1>Contrassenha do cofre</h1><p>Calculador offline. Nenhum dado é transmitido.</p>
+<label for="key">Chave secreta (16 dígitos)</label><input id="key" type="password" inputmode="numeric" maxlength="16" autocomplete="off">
+<button id="gen" type="button">Gerar chave para primeira configuração</button><p id="newkey"></p>
+<label for="id">ID mostrado no LCD (12 caracteres)</label><input id="id" maxlength="12" autocapitalize="characters" autocomplete="off">
+<button id="calc" type="button">Calcular contrassenha</button>
+<output id="result" aria-live="polite"></output><small>Use o ID atual. Ele muda a cada minuto. Depois de desbloquear, digite o PIN normal.</small>
+<script>
+"use strict";
+const MASK=(1n<<64n)-1n;
+const rot=(x,n)=>((x<<n)|(x>>(64n-n)))&MASK;
+function sipHash8(key,m){
+  const read=(p)=>{let r=0n;for(let i=0;i<8;i++)r|=BigInt(key.charCodeAt(p+i))<<BigInt(8*i);return r;};
+  const k0=read(0),k1=read(8);
+  let a=0x736f6d6570736575n^k0,b=0x646f72616e646f6dn^k1,c=0x6c7967656e657261n^k0,d=0x7465646279746573n^k1;
+  function round(){a=(a+b)&MASK;b=rot(b,13n)^a;a=rot(a,32n);c=(c+d)&MASK;d=rot(d,16n)^c;a=(a+d)&MASK;d=rot(d,21n)^a;c=(c+b)&MASK;b=rot(b,17n)^c;c=rot(c,32n);}
+  d^=m;round();round();a^=m;
+  const end=8n<<56n;d^=end;round();round();a^=end;c^=255n;
+  for(let i=0;i<4;i++)round();return a^b^c^d;
+}
+const el=id=>document.getElementById(id);
+el("gen").onclick=()=>{
+  let key="";const buf=new Uint8Array(32);
+  while(key.length<16){crypto.getRandomValues(buf);for(const b of buf)if(b<250&&key.length<16)key+=String(b%10);}
+  el("key").value=key;el("newkey").textContent="Guarde e cadastre esta chave: "+key;
+  el("result").textContent="";
+};
+el("calc").onclick=()=>{
+  const k=el("key").value.trim(),id=el("id").value.trim();
+  if(!/^\d{16}$/.test(k)||! /^[0-9a-fA-F]{12}$/.test(id)){el("result").textContent="Confira os dados.";return;}
+  el("newkey").textContent="";
+  el("result").textContent=String(sipHash8(k,BigInt("0x"+id))%1000000n).padStart(6,"0");
+};
+</script></html>

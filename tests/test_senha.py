@@ -47,11 +47,11 @@ struct Servo {
   void writeMicroseconds(int value) { pulse=value; }
 };
 struct EEPROMClass {
-  char data[6]; int writes=0;
+  char data[64]; int writes=0;
   EEPROMClass() { memset(data,255,sizeof(data)); }
-  byte read(int address) { assert(address>=0 && address<6); return data[address]; }
+  byte read(int address) { assert(address>=0 && address<64); return data[address]; }
   void update(int address, byte value) {
-    assert(address>=0 && address<6);
+    assert(address>=0 && address<64);
     if (read(address)!=value) { data[address]=value; ++writes; }
   }
   template<class T> void get(int address, T &value) {
@@ -60,7 +60,8 @@ struct EEPROMClass {
   }
   template<class T> void put(int address, const T &value) {
     assert(address>=0 && address+sizeof(value)<=sizeof(data));
-    memcpy(data+address,&value,sizeof(value)); ++writes;
+    const byte *p=reinterpret_cast<const byte*>(&value);
+    for (size_t i=0; i<sizeof(value); ++i) update(address+i,p[i]);
   }
 } EEPROM;
 '''
@@ -75,7 +76,7 @@ void press(unsigned int mask) { keys=mask; runMs(50); release(); }
 void stopped() { assert(trava.enabled && trava.pulse==SERVO_PARADO_US); }
 void restart() {
   strcpy(senha,"1234"); modo=NORMAL; quantidade=0; digitado[0]=0;
-  keys=0; setup(); runMs(100); assert(fase==LIVRE); stopped();
+  keys=0; setup(); runMs(100); assert(fase==LIVRE || fase==ESPERA_REC); stopped();
 }
 void wrongPassword() {
   assert(fase==ERRO_SONORO && buzzerLigado && !portaAberta);
@@ -92,7 +93,18 @@ int main() {
   assert(OCR2A==249 && TCCR2A==_BV(WGM21) && TCCR2B==_BV(CS21));
   assert(TIMSK2==_BV(OCIE2A));
   assert(strcmp(senha,"1234")==0 && !portaAberta);
+  assert(strcmp(lcd.lines[0],"Chave 16 digitos")==0);
+  const char *key="0123456789012345";
+  enter(key); enter("#"); assert(confirmarChave && !chaveConfigurada);
+  enter("9999999999999999#"); assert(!confirmarChave && !chaveConfigurada);
+  enter(key); enter("#"); enter(key); enter("#");
+  assert(chaveConfigurada && EEPROM.read(ADDR_REC_MAGIC)==REC_MAGIC);
+  assert(memcmp(chaveRec,key,16)==0);
+  restart(); assert(chaveConfigurada);
   assert(strcmp(lcd.lines[0],"Digite a senha")==0);
+  // Vetor oficial SipHash para mensagem de oito bytes 00..07.
+  char vectorKey[16]; for (int i=0;i<16;i++) vectorKey[i]=char(i);
+  assert(sipHash8(vectorKey,0x0706050403020100ULL)==0x93f5f5799a932462ULL);
   for (int key=0; key<12; ++key) {
     keys=1U<<key;
     char read=0; bool done=false;
@@ -120,18 +132,37 @@ int main() {
   release();
   assert(strcmp(lcd.lines[0],"Senha atual:")==0);
   enter("9999#"); wrongPassword();
-  assert(modo==VALIDAR_ATUAL && EEPROM.writes==0);
+  assert(modo==VALIDAR_ATUAL && erros==1);
   enter("123#"); assert(fase==AVISO_PRESERVAR && quantidade==3);
   runMs(900); assert(fase==LIVRE && quantidade==3);
   enter("4#"); assert(modo==DEFINIR_NOVA && quantidade==0);
   assert(strcmp(lcd.lines[0],"Nova senha:")==0);
   enter("56#"); runMs(900);
-  assert(modo==DEFINIR_NOVA && quantidade==2 && EEPROM.writes==0);
+  assert(modo==DEFINIR_NOVA && quantidade==2 && erros==0);
   enter("*000078#"); assert(fase==AVISO_LIMPAR);
-  assert(strcmp(senha,"0000")==0 && EEPROM.writes==1);
+  assert(strcmp(senha,"0000")==0 && erros==0);
   runMs(1200); assert(fase==LIVRE && modo==NORMAL && quantidade==0);
   stopped(); restart(); assert(strcmp(senha,"0000")==0);
-  enter("1234#"); wrongPassword();
+  enter("1234#"); wrongPassword(); assert(erros==1);
+  restart(); assert(erros==1);
+  enter("1234#"); wrongPassword(); assert(erros==2);
+  enter("1234#"); wrongPassword(); assert(bloqueado());
+  assert(strcmp(lcd.lines[0],"ID: 000000010000")==0);
+  uint32_t session=sessaoRec;
+  uint32_t first=codigoRec();
+  enter("0000#"); assert(!portaAberta && bloqueado());
+  limparRec();
+  runMs(60000); assert(janelaRec==1 && qtdRec==0);
+  assert(codigoRec()!=first); // this fixed test key has different outputs
+  restart(); assert(bloqueado() && fase==ESPERA_REC);
+  runMs(30000); assert(sessaoRec!=session && fase==LIVRE);
+  char recovery[7];
+  snprintf(recovery,sizeof(recovery),"%06lu",(unsigned long)((codigoRec()+1)%1000000));
+  enter(recovery); enter("#"); assert(fase==ESPERA_REC && bloqueado());
+  runMs(30000); assert(fase==LIVRE && bloqueado());
+  snprintf(recovery,sizeof(recovery),"%06lu",(unsigned long)codigoRec());
+  enter(recovery); enter("#"); assert(!bloqueado() && !portaAberta && erros==0);
+  assert(strcmp(lcd.lines[0],"Digite a senha")==0);
   enter("0000#");
   assert(fase==ABRINDO && !portaAberta && trava.pulse==SERVO_ABRIR_US);
   assert(EEPROM.read(sizeof(senha))==1);
@@ -184,4 +215,4 @@ with tempfile.TemporaryDirectory(prefix="cofre-test-") as tmp:
     subprocess.run([os.environ.get("CXX", "g++"), "-std=c++11", "-Wall", "-Wextra",
                     "-Werror", "-I", tmp, str(test), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-print("OK: Timer2, teclado, autenticação, EEPROM, servo, dois bipes e transbordamento do contador.")
+print("OK: Timer2, teclado, senha, EEPROM, servo, bipes, SipHash e recuperação.")
