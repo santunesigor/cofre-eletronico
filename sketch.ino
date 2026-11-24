@@ -11,6 +11,8 @@
 #include <Servo.h>
 #include <EEPROM.h>
 #include <string.h>
+#include <avr/interrupt.h>
+#include <util/atomic.h>
 
 // LCD 16x2 I2C: SDA=A4, SCL=A5 no Arduino Uno.
 // 0x27 e o endereco padrao no Wokwi; confirme no LCD fisico.
@@ -21,6 +23,42 @@ Servo trava;
 const byte PIN_SERVO = 9;
 const byte PIN_BUZZER = A2;
 const unsigned int FREQUENCIA_BEEP_ABERTURA_HZ = 4000;
+// Timer2: interrupcao a cada 125 us; alternar A2 gera 4 kHz.
+const uint32_t TICKS_POR_MS = 8;
+volatile uint32_t ticksTimer = 0;
+volatile bool buzzerLigado = false;
+
+ISR(TIMER2_COMPA_vect) {
+  ++ticksTimer;
+  if (buzzerLigado) PINC = _BV(PC2); // A2: toggle atomico do pino.
+}
+
+uint32_t lerTimer() {
+  uint32_t ticks;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { ticks = ticksTimer; }
+  return ticks;
+}
+
+void configurarTimer() {
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    TCCR2B = 0;
+    TCCR2A = _BV(WGM21); // CTC, sem PWM nos pinos do Timer2.
+    TCNT2 = 0;
+    OCR2A = F_CPU / 8UL / (2UL * FREQUENCIA_BEEP_ABERTURA_HZ) - 1;
+    TIFR2 = _BV(OCF2A);
+    TIMSK2 = _BV(OCIE2A);
+    ticksTimer = 0;
+    buzzerLigado = false;
+    TCCR2B = _BV(CS21); // prescaler 8
+  }
+}
+
+void controlarBuzzer(bool ligado) {
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    buzzerLigado = ligado;
+    PORTC &= ~_BV(PC2);
+  }
+}
 const unsigned long DURACAO_BEEP_ABERTURA_MS = 70;
 const unsigned long INTERVALO_BEEPS_ABERTURA_MS = 50;
 // Codigos internos dos botoes rotulados no circuito.
@@ -53,10 +91,28 @@ bool portaAberta = false;
 
 char leituraAnterior = '\0';
 char teclaEstavel = '\0';
-unsigned long ultimaMudanca = 0;
-unsigned long inicioTroca = 0;
+uint32_t ultimaMudanca = 0;
+uint32_t inicioTroca = 0;
 bool aguardarSoltar = false;
 bool trocaDisparada = false;
+byte linhaAtiva = 0;
+uint32_t inicioLinha = 0;
+unsigned int pressionadas = 0;
+char teclaLida = '\0';
+
+enum Fase { LIVRE, INICIANDO, ABRINDO, NEUTRO_ABERTURA, BEEP_1,
+            INTERVALO_BEEPS, BEEP_2, FECHANDO, NEUTRO_FECHAMENTO,
+            AVISO_LIMPAR, AVISO_PRESERVAR, ERRO_SONORO, ERRO_SILENCIOSO };
+Fase fase = LIVRE;
+uint32_t inicioFase = 0;
+uint32_t duracaoFase = 0;
+
+void iniciarFase(Fase nova, uint32_t duracaoMs);
+void iniciarFase(Fase nova, uint32_t duracaoMs) {
+  fase = nova;
+  inicioFase = lerTimer();
+  duracaoFase = duracaoMs * TICKS_POR_MS;
+}
 
 void mostrarEntrada() {
   lcd.clear();
@@ -83,38 +139,47 @@ void limparEntrada() {
   mostrarEntrada();
 }
 
-// As linhas ficam em alta impedancia. So a linha testada vai para LOW.
-// As colunas usam INPUT_PULLUP, dispensando resistores para os 12 botoes.
-char lerTeclado() {
-  unsigned int pressionadas = 0;
-  char tecla = '\0';
-  for (byte linha = 0; linha < 4; linha++) {
-    digitalWrite(PIN_LINHAS[linha], LOW);
-    pinMode(PIN_LINHAS[linha], OUTPUT);
-    delayMicroseconds(30);
-
-    for (byte coluna = 0; coluna < 3; coluna++) {
-      if (digitalRead(PIN_COLUNAS[coluna]) == LOW) {
-        pressionadas |= 1U << (linha * 3 + coluna);
-        tecla = TECLAS[linha][coluna];
-      }
-    }
-    pinMode(PIN_LINHAS[linha], INPUT);
-  }
-  if (pressionadas == ((1U << 9) | (1U << 11))) return TECLA_TROCAR_SENHA;
-  if (pressionadas && !(pressionadas & (pressionadas - 1))) return tecla;
-  return '\0';
+// Varredura cooperativa: uma linha por vez, sem espera bloqueante.
+void ativarLinha() {
+  digitalWrite(PIN_LINHAS[linhaAtiva], LOW);
+  pinMode(PIN_LINHAS[linhaAtiva], OUTPUT);
+  inicioLinha = lerTimer();
 }
 
-// So devolve uma tecla por pressionamento (antirruido/antirrepique).
+// Retorna true somente ao completar a leitura das quatro linhas.
+bool lerTeclado(char &tecla) {
+  // Dois ticks garantem pelo menos 125 us de estabilizacao.
+  if (uint32_t(lerTimer() - inicioLinha) < 2) return false;
+  for (byte coluna = 0; coluna < 3; coluna++) {
+    if (digitalRead(PIN_COLUNAS[coluna]) == LOW) {
+      pressionadas |= 1U << (linhaAtiva * 3 + coluna);
+      teclaLida = TECLAS[linhaAtiva][coluna];
+    }
+  }
+  pinMode(PIN_LINHAS[linhaAtiva], INPUT);
+  linhaAtiva = (linhaAtiva + 1) % 4;
+  bool completa = linhaAtiva == 0;
+  if (completa) {
+    tecla = '\0';
+    if (pressionadas == ((1U << 9) | (1U << 11))) tecla = TECLA_TROCAR_SENHA;
+    else if (pressionadas && !(pressionadas & (pressionadas - 1))) tecla = teclaLida;
+    pressionadas = 0;
+    teclaLida = '\0';
+  }
+  ativarLinha();
+  return completa;
+}
+
+// Debounce e deteccao da combinacao de 5 segundos pelo Timer2.
 char lerPressionamento() {
-  char leitura = lerTeclado();
-  unsigned long agora = millis();
+  char leitura;
+  if (!lerTeclado(leitura)) return '\0';
+  uint32_t agora = lerTimer();
   if (leitura != leituraAnterior) {
     leituraAnterior = leitura;
     ultimaMudanca = agora;
   }
-  if (agora - ultimaMudanca >= DEBOUNCE_MS && leitura != teclaEstavel) {
+  if (uint32_t(agora - ultimaMudanca) >= DEBOUNCE_MS * TICKS_POR_MS && leitura != teclaEstavel) {
     teclaEstavel = leitura;
     if (teclaEstavel == '\0') {
       aguardarSoltar = false;
@@ -128,7 +193,7 @@ char lerPressionamento() {
   }
   if (leitura != TECLA_TROCAR_SENHA) inicioTroca = agora;
   if (teclaEstavel == TECLA_TROCAR_SENHA && leitura == TECLA_TROCAR_SENHA &&
-      !trocaDisparada && agora - inicioTroca >= TEMPO_TROCA_MS) {
+      !trocaDisparada && uint32_t(agora - inicioTroca) >= TEMPO_TROCA_MS * TICKS_POR_MS) {
     trocaDisparada = true;
     return TECLA_TROCAR_SENHA;
   }
@@ -137,50 +202,84 @@ char lerPressionamento() {
 
 void pararServo() {
   trava.writeMicroseconds(SERVO_PARADO_US);
-  delay(100);
-}
-
-// shortcut: movimento por tempo nao mede a posicao; use sensores se precisar garantir o fechamento.
-void moverServo(int pulso) {
-  trava.writeMicroseconds(pulso);
-  trava.attach(PIN_SERVO);
-  delay(TEMPO_MOVIMENTO_MS);
-  pararServo();
-}
-
-void tocarBipesAbertura() {
-  for (byte i = 0; i < 2; i++) {
-    tone(PIN_BUZZER, FREQUENCIA_BEEP_ABERTURA_HZ);
-    delay(DURACAO_BEEP_ABERTURA_MS);
-    noTone(PIN_BUZZER);
-    if (i == 0) delay(INTERVALO_BEEPS_ABERTURA_MS);
-  }
 }
 
 void abrirPorta() {
+  // Persiste aberto antes do movimento, como medida conservadora.
   EEPROM.update(sizeof(senha), 1);
-  moverServo(SERVO_ABRIR_US);
-  portaAberta = true;
-  tocarBipesAbertura();
-  mostrarEntrada();
+  trava.writeMicroseconds(SERVO_ABRIR_US);
+  iniciarFase(ABRINDO, TEMPO_MOVIMENTO_MS);
 }
 
 void fecharPorta() {
-  moverServo(SERVO_FECHAR_US);
-  EEPROM.update(sizeof(senha), 0);
-  portaAberta = false;
-  lcd.clear();
-  lcd.print("Cofre fechado");
-  delay(800);
-  limparEntrada();
+  trava.writeMicroseconds(SERVO_FECHAR_US);
+  iniciarFase(FECHANDO, TEMPO_MOVIMENTO_MS);
+}
+
+// Maquina de estados: cada chamada executa no maximo uma transicao.
+void atualizarFase() {
+  if (fase == LIVRE || uint32_t(lerTimer() - inicioFase) < duracaoFase) return;
+  switch (fase) {
+    case INICIANDO:
+      fase = LIVRE;
+      mostrarEntrada();
+      break;
+    case ABRINDO:
+      pararServo();
+      iniciarFase(NEUTRO_ABERTURA, 100);
+      break;
+    case NEUTRO_ABERTURA:
+      portaAberta = true;
+      controlarBuzzer(true);
+      iniciarFase(BEEP_1, DURACAO_BEEP_ABERTURA_MS);
+      break;
+    case BEEP_1:
+      controlarBuzzer(false);
+      iniciarFase(INTERVALO_BEEPS, INTERVALO_BEEPS_ABERTURA_MS);
+      break;
+    case INTERVALO_BEEPS:
+      controlarBuzzer(true);
+      iniciarFase(BEEP_2, DURACAO_BEEP_ABERTURA_MS);
+      break;
+    case BEEP_2:
+      controlarBuzzer(false);
+      fase = LIVRE;
+      mostrarEntrada();
+      break;
+    case FECHANDO:
+      pararServo();
+      iniciarFase(NEUTRO_FECHAMENTO, 100);
+      break;
+    case NEUTRO_FECHAMENTO:
+      EEPROM.update(sizeof(senha), 0);
+      portaAberta = false;
+      lcd.clear();
+      lcd.print("Cofre fechado");
+      iniciarFase(AVISO_LIMPAR, 800);
+      break;
+    case ERRO_SONORO:
+      controlarBuzzer(false);
+      iniciarFase(ERRO_SILENCIOSO, 200);
+      break;
+    case ERRO_SILENCIOSO:
+    case AVISO_LIMPAR:
+      fase = LIVRE;
+      limparEntrada();
+      break;
+    case AVISO_PRESERVAR:
+      fase = LIVRE;
+      mostrarEntrada();
+      break;
+    case LIVRE:
+      break;
+  }
 }
 
 void confirmarSenha() {
   if (quantidade != 4) {
     lcd.clear();
     lcd.print("Digite 4 numeros");
-    delay(900);
-    mostrarEntrada();
+    iniciarFase(AVISO_PRESERVAR, 900);
     return;
   }
   if (modo == DEFINIR_NOVA) {
@@ -189,8 +288,7 @@ void confirmarSenha() {
     modo = NORMAL;
     lcd.clear();
     lcd.print("Senha alterada!");
-    delay(1200);
-    limparEntrada();
+    iniciarFase(AVISO_LIMPAR, 1200);
   } else if (strcmp(digitado, senha) == 0) {
     if (modo == VALIDAR_ATUAL) {
       modo = DEFINIR_NOVA;
@@ -205,13 +303,13 @@ void confirmarSenha() {
     lcd.print("Senha incorreta");
     lcd.setCursor(0, 1);
     lcd.print("Tente de novo");
-    tone(PIN_BUZZER, 4000, 1500);
-    delay(1700);
-    limparEntrada();
+    controlarBuzzer(true);
+    iniciarFase(ERRO_SONORO, 1500);
   }
 }
 
 void tratarTecla(char tecla) {
+  if (fase != LIVRE) return;
   if (tecla == TECLA_TROCAR_SENHA) {
     if (!portaAberta && modo == NORMAL) {
       modo = VALIDAR_ATUAL;
@@ -247,17 +345,26 @@ void setup() {
   for (byte i = 0; i < 4; i++) pinMode(PIN_LINHAS[i], INPUT);
   for (byte i = 0; i < 3; i++) pinMode(PIN_COLUNAS[i], INPUT_PULLUP);
   pinMode(PIN_BUZZER, OUTPUT);
-  noTone(PIN_BUZZER);
+  controlarBuzzer(false);
 
   trava.writeMicroseconds(SERVO_PARADO_US);
   trava.attach(PIN_SERVO);
   pararServo();
   lcd.init();
   lcd.backlight();
-  mostrarEntrada();
+  configurarTimer();
+  linhaAtiva = 0;
+  pressionadas = 0;
+  teclaLida = '\0';
+  leituraAnterior = teclaEstavel = '\0';
+  ultimaMudanca = inicioTroca = 0;
+  aguardarSoltar = trocaDisparada = false;
+  ativarLinha();
+  iniciarFase(INICIANDO, 100);
 }
 
 void loop() {
   char tecla = lerPressionamento();
-  if (tecla != '\0') tratarTecla(tecla);
+  if (tecla != '\0' && fase == LIVRE) tratarTecla(tecla);
+  atualizarFase();
 }
