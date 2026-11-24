@@ -17,6 +17,14 @@ Protótipo didático de um cofre eletrônico com Arduino Uno, senha numérica, d
 - Para trocar a senha, com o cofre fechado, segure **Limpar + Confirmar juntos por 5 segundos** e solte os dois. O LCD pede `Senha atual:`; digite os quatro números atuais e pressione **Confirmar**. Em `Nova senha:`, digite exatamente quatro números e pressione **Confirmar** para salvar.
 - Durante a troca, **Limpar** apaga a entrada, dígitos além do quarto são ignorados e uma senha atual incorreta impede a alteração. A nova senha permanece salva após desligar o Arduino.
 
+## Temporização por hardware
+
+O Arduino Uno R3 (ATmega328P, 16 MHz) usa o **Timer2 em modo CTC**, com prescaler 8 e OCR2A = 249, gerando uma interrupção a cada 125 µs (8 kHz). A interrupção incrementa um contador de ticks e alterna o pino A2 quando o buzzer está ativo, produzindo 4 kHz. O Timer1 permanece reservado à biblioteca Servo; o Timer0 do núcleo Arduino não é reconfigurado.
+
+O teclado, o debounce de 40 ms, a combinação de 5 segundos, o movimento do servo, os bipes e as mensagens do LCD são controlados por uma máquina de estados não bloqueante. O sketch não chama `delay()`, `delayMicroseconds()`, `millis()`, `micros()` ou `tone()`. As bibliotecas e as operações de I2C/EEPROM podem continuar usando esperas internas. Durante movimentos e avisos, o teclado continua sendo varrido, mas novas ações são ignoradas para evitar comandos concorrentes.
+
+O Timer2 fica reservado ao firmware: não use simultaneamente bibliotecas que o reconfigurem ou PWM por hardware nos pinos D3/D11. A pinagem do circuito permanece a mesma.
+
 ## Ajuste do servo físico
 
 Esta versão foi adaptada ao servo que está dando voltas completas. A abertura e o fechamento usam tempo, sem medir o ângulo. No `sketch.ino`:
