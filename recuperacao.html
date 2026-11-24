@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Contrassenha do cofre</title>
-<style>[hidden]{display:none!important}*{box-sizing:border-box} .camera{position:relative;overflow:hidden;border-radius:12px;background:#111}video{display:block;width:100%;max-height:55vh;object-fit:contain}.guide{position:absolute;top:39%;left:5%;width:90%;height:22%;border:2px solid #98f2b6;border-radius:6px;pointer-events:none;box-shadow:0 0 0 999px #0005} .buttons{display:grid;grid-template-columns:1fr 1fr;gap:.6rem} .status{min-height:1.5em;color:#43546b} button{cursor:pointer} input{border:1px solid #aaa;border-radius:8px} button{border:1px solid #aaa;border-radius:8px;background:#eef2f7} #start,#calc{background:#245b85;color:white;border:0} #photoLabel{display:block;padding:.65rem;border:1px solid #aaa;border-radius:8px;text-align:center;cursor:pointer} body{font:16px system-ui;max-width:32rem;margin:2rem auto;padding:0 1rem;color:#202329;background:#fafafa}label,input,button{display:block;margin:.7rem 0}input,button{font:inherit;padding:.75rem;box-sizing:border-box;width:100%}output{display:block;font:700 2.5rem monospace;letter-spacing:.15em;margin:1rem 0}small{color:#555}</style>
+<style>[hidden]{display:none!important}*{box-sizing:border-box} .camera{position:relative;overflow:hidden;border-radius:12px;background:#111}video{display:block;width:100%;height:auto}.guide{position:absolute;top:39%;left:5%;width:90%;height:22%;border:2px solid #98f2b6;border-radius:6px;pointer-events:none;box-shadow:0 0 0 999px #0005} .buttons{display:grid;grid-template-columns:1fr 1fr;gap:.6rem} .status{min-height:1.5em;color:#43546b} button{cursor:pointer} input{border:1px solid #aaa;border-radius:8px} button{border:1px solid #aaa;border-radius:8px;background:#eef2f7} #start,#calc{background:#245b85;color:white;border:0} #photoLabel{display:block;padding:.65rem;border:1px solid #aaa;border-radius:8px;text-align:center;cursor:pointer} body{font:16px system-ui;max-width:32rem;margin:2rem auto;padding:0 1rem;color:#202329;background:#fafafa}label,input,button{display:block;margin:.7rem 0}input,button{font:inherit;padding:.75rem;box-sizing:border-box;width:100%}output{display:block;font:700 2.5rem monospace;letter-spacing:.15em;margin:1rem 0}small{color:#555}</style>
 <h1>Contrassenha do cofre</h1><p>Calculador offline. Nenhum dado é transmitido.</p>
 <label for="key">Chave secreta (16 dígitos)</label><input id="key" type="password" inputmode="numeric" maxlength="16" autocomplete="off">
 <button id="gen" type="button">Gerar chave para primeira configuração</button><p id="newkey"></p>
@@ -35,6 +35,7 @@ el("gen").onclick=()=>{
   while(key.length<16){crypto.getRandomValues(buf);for(const b of buf)if(b<250&&key.length<16)key+=String(b%10);}
   el("key").value=key;el("newkey").textContent="Guarde e cadastre esta chave: "+key;
   el("result").textContent="";
+  recalcular();
 };
 function calcular(){
   const k=el("key").value.trim(),id=el("id").value.trim();

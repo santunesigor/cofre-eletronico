@@ -31,6 +31,8 @@ O calculador também lê a primeira linha do LCD pela câmera (OCR local), confi
 
 Para preparar os arquivos OCR, com Node.js instalado, execute `npm install` e `npm run prepare:ocr`. Depois sirva a pasta com `python3 -m http.server 8000` e abra `http://localhost:8000/recuperacao.html` no próprio computador. Para o celular, hospede o HTML e a pasta `ocr/` juntos em um endereço HTTPS; HTTP por IP da rede local normalmente não permite acesso à câmera. O workflow **Preparar scanner do LCD** gera um ZIP pronto com os arquivos OCR. Nenhuma imagem ou chave é enviada a serviços externos; as bibliotecas e modelos são distribuídos localmente no pacote. A digitação manual funciona mesmo sem os arquivos OCR.
 
+Para disponibilizar no celular via GitHub Pages, em **Settings → Pages → Build and deployment → Source**, selecione **GitHub Actions**. Depois abra o workflow **Preparar scanner do LCD**, clique em **Run workflow** e marque `publicar`. O workflow publica o calculador e os arquivos OCR juntos, via HTTPS. O código publicado não contém a sua chave secreta.
+
 ## Temporização por hardware
 
 O Arduino Uno R3 (ATmega328P, 16 MHz) usa o **Timer2 em modo CTC**, com prescaler 8 e OCR2A = 249, gerando uma interrupção a cada 125 µs (8 kHz). A interrupção incrementa um contador de ticks e alterna o pino A2 quando o buzzer está ativo, produzindo 4 kHz. O Timer1 permanece reservado à biblioteca Servo; o Timer0 do núcleo Arduino não é reconfigurado.
