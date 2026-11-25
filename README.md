@@ -2,8 +2,6 @@
 
 Protótipo didático de um cofre eletrônico com Arduino Uno, senha numérica, display LCD, servomotor e alerta sonoro. Usamos o **Wokwi** como simulador do circuito.
 
-Consulte o [roteiro de apresentação](APRESENTACAO.md) para demonstrar o projeto e o [guia de controles e testes](GUIA_TESTES.md) para ensaiar cada função.
-
 ## Como compilar e gravar na Arduino IDE
 
 Este projeto usa **Arduino Uno R3 ou compatível com ATmega328P**. Os dois sketches estão no repositório e podem ser abertos diretamente na IDE.
@@ -57,9 +55,7 @@ A memória é circular: ao lotar, o próximo evento substitui o mais antigo. Cad
 
 ## Bloqueio e código de recuperação
 
-Cubra o LCD com o [adesivo de recuperação](adesivo-recuperacao.svg), impresso em material opaco a 100% da escala. O modelo mede 64,5 × 16 mm e cobre apenas a janela do LCD. Confira a medida da janela do seu modelo.
-
-Na primeira inicialização com o cofre fechado, o firmware gera e salva o código na EEPROM se ainda não houver um. Retire o adesivo, anote os 16 dígitos em local seguro e pressione **Confirmar** três vezes separadas. A terceira pressão encerra a exibição mesmo após reiniciar. Se desligar antes dela, o código volta a aparecer e são pedidas três pressões. O Arduino Uno não oferece armazenamento seguro para esse código. Ele pode ser lido por quem tiver acesso à memória da placa.
+Na primeira inicialização com o cofre fechado, o firmware gera e salva o código na EEPROM se ainda não houver um. Anote os 16 dígitos em local seguro e pressione **Confirmar** três vezes separadas. A terceira pressão encerra a exibição mesmo após reiniciar. Se desligar antes dela, o código volta a aparecer e são pedidas três pressões. O Arduino Uno não oferece armazenamento seguro para esse código. Ele pode ser lido por quem tiver acesso à memória da placa.
 
 Em `Defina seu PIN`, escolha quatro dígitos e pressione **Confirmar**. Em `Confirme seu PIN`, digite o mesmo PIN e confirme. Se os PINs divergirem, escolha e confirme novamente. Se desligar antes de salvar, o cofre volta à tela de cadastro com o código oculto.
 
@@ -130,7 +126,7 @@ Crie um [projeto Arduino Uno no Wokwi](https://wokwi.com/projects/new/arduino-un
 
 O diagrama separa o teclado dos periféricos e usa trajetos definidos para os fios: laranja para as linhas e azul para as colunas. No menu de três pontos da simulação, escolha **Fit** para enquadrar todo o circuito; amplie para conferir os pinos.
 
-A geração do código depende da variação entre dois relógios no Uno físico. Use o Wokwi para conferir o circuito e a pinagem. Se o simulador não fornecer essa variação, ele pode parar em `Falha na geracao`. Para testar o fluxo completo, use o Uno físico ou execute `python3 tests/test_senha.py`, que injeta amostras durante o teste.
+A geração do código depende da variação entre dois relógios no Uno físico. Use o Wokwi para conferir o circuito e a pinagem. Se o simulador parar em `Falha na geracao`, teste o primeiro uso na placa física.
 
 É possível clicar nos botões ou usar os atalhos do teclado:
 
@@ -141,8 +137,6 @@ A geração do código depende da variação entre dois relógios no Uno físico
 | Confirmar | `Z` |
 
 O servo do diagrama Wokwi é posicional e não reproduz o movimento contínuo do servo físico; use a simulação para conferir o teclado, as mensagens e a troca de senha. O percurso real precisa ser calibrado no hardware. No Wokwi, use os atalhos **X + Z** juntos por 5 segundos para iniciar a troca de senha. A persistência da EEPROM entre sessões depende do simulador.
-
-Para executar o teste de regressão do firmware no computador (com Python 3 e g++): `python3 tests/test_senha.py`.
 
 ## Referências
 
